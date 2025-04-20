@@ -287,27 +287,11 @@ class Com extends React.Component {
         socket.on('runStatus', function (status) {
             //CommandHistory.write('runStatus: ' + status);
             console.log('runStatus: ' + status);
-            if (status === 'running') {
-                playing = true;
-                paused = false;
-            } else if (status === 'paused') {
-                paused = true;
-            } else if (status === 'm0') {
-                paused = true;
-                m0 = true;
-            } else if (status === 'resumed') {
-                paused = false;
-            } else if (status === 'stopped') {
-                playing = false;
-                paused = false;
-            } else if (status === 'finished') {
-                playing = false;
-                paused = false;
-            } else if (status === 'alarm') {
+            if (status === 'alarm') {
                 CommandHistory.error('ALARM!')
                 //socket.emit('clearAlarm', 2);
             }
-            runStatus(status);
+            ({ playing, paused, m0 } = runStatus(status, true));
         });
 
         socket.on('data', function (data) {
@@ -458,10 +442,8 @@ class Com extends React.Component {
             }
             $('#queueCnt').html(queueState);
             if (playing && data === 0) {
-                playing = false;
-                paused = false;
                 jobLines = 0;
-                runStatus('stopped');
+                ({ playing, paused, m0 } = runStatus('stopped'));
                 $('#playicon').removeClass('fa-pause');
                 $('#playicon').addClass('fa-play');
 
@@ -581,10 +563,8 @@ class Com extends React.Component {
             CommandHistory.write('Disconnecting Machine', CommandHistory.INFO);
             console.log('Machine Disconnected by user');
             socket.emit('closePort');
-            playing = false;
-            paused = false;
             jobLines = 0;
-            runStatus('stopped');
+            ({ playing, paused, m0 } = runStatus('stopped'));
             $("#machineStatus").removeClass('badge-ok');
             $("#machineStatus").addClass('badge-notify');
             $("#machineStatus").removeClass('badge-warn');
@@ -754,9 +734,7 @@ export function runJob(job) {
                 if (job.length > 0) {
                     jobLines = job.split(/\r\n|\r|\n/).length
                     CommandHistory.write('Running Job; ' + jobLines + ' lines', CommandHistory.INFO);
-                    playing = true;
-                    jobLines = job.split(/\r\n|\r|\n/).length
-                    runStatus('running');
+                    ({ playing, paused, m0 } = runStatus('running'));
                     $('#playicon').removeClass('fa-play');
                     $('#playicon').addClass('fa-pause');
                     jobStartTime = new Date(Date.now());
@@ -779,8 +757,7 @@ export function pauseJob() {
     console.log('pauseJob');
     if (serverConnected) {
         if (machineConnected){
-            paused = true;
-            runStatus('paused');
+            ({ playing, paused, m0 } = runStatus('paused'));
             $('#playicon').removeClass('fa-pause');
             $('#playicon').addClass('fa-play');
             socket.emit('pause');
@@ -796,9 +773,7 @@ export function resumeJob() {
     console.log('resumeJob');
     if (serverConnected) {
         if (machineConnected){
-            paused = false;
-            m0 = false;
-            runStatus('running');
+            ({ playing, paused, m0 } = runStatus('running'));
             $('#playicon').removeClass('fa-play');
             $('#playicon').addClass('fa-pause');
             socket.emit('resume');
@@ -815,11 +790,8 @@ export function abortJob() {
     if (serverConnected) {
         if (machineConnected){
             CommandHistory.write('Aborting job', CommandHistory.INFO);
-            playing = false;
-            paused = false;
-            m0 = false;
             jobLines = 0;
-            runStatus('stopped');
+            ({ playing, paused, m0 } = runStatus('stopped'));
             $('#playicon').removeClass('fa-pause');
             $('#playicon').addClass('fa-play');
             socket.emit('stop');
@@ -999,8 +971,7 @@ export function playpauseMachine() {
                         laseroncmd = 0;
                     }
                     socket.emit('resume', laseroncmd);
-                    paused = false;
-                    runStatus('running');
+                    ({ playing, paused, m0 } = runStatus('running'));
                     $('#playicon').removeClass('fa-play');
                     $('#playicon').addClass('fa-pause');
                     // end ifPaused
@@ -1011,8 +982,7 @@ export function playpauseMachine() {
                         laseroffcmd = 0;
                     }
                     socket.emit('pause', laseroffcmd);
-                    paused = true;
-                    runStatus('paused');
+                    ({ playing, paused, m0 } = runStatus('paused'));
                     $('#playicon').removeClass('fa-pause');
                     $('#playicon').addClass('fa-play');
                 }
