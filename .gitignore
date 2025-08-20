@@ -4,3 +4,5 @@ dist
 .vscode
 .zip
 machine-profiles.json
+ui_version.output
+git.log.output

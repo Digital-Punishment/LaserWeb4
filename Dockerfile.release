@@ -4,10 +4,11 @@ WORKDIR /app
 
 COPY . .
 
-RUN apk add --no-cache make gcc g++ python python3 linux-headers udev git
+RUN apk add --no-cache pkgconfig libusb-dev eudev-dev make gcc g++ python python3 linux-headers udev git
 RUN git config --global url."https://github.com".insteadOf "ssh://git@github.com"
 RUN npm set progress=false && npm config set depth 0
 RUN npm ci
+# RUN npm install
 
 #
 # ---- Release ----

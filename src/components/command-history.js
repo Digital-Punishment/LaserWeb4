@@ -8,7 +8,8 @@ import { dispatch, connect } from 'react-redux';
 
 import { isObject } from '../lib/helpers';
 
-import stringify from 'json-stringify-safe'
+//import stringify from 'json-stringify-safe'
+import stringify from 'json-stringify-pretty-compact'
 
 // level STD, INFO, WARN, DANGER, SUCCESS
 const CommandHistory_ICON = ['terminal', 'info-circle', 'exclamation-triangle', 'exclamation-circle', 'check-circle'];
