@@ -9,37 +9,10 @@ Releases are made available on https://github.com/LaserWeb/LaserWeb4-Binaries/
 For more documentation, go to the [Wiki](https://github.com/LaserWeb/LaserWeb4/wiki) or our website https://laserweb.yurl.ch
 
 ## Docker
-
-- run image:
-```sh
-docker run -device=/dev/ttyUSB0 -p 8000:8000 joesantos/laserweb:latest
-```
-- connect to app: http://localhost:8000
-
-### Development
-
-Docker user targets:
-- dev
-- test
-
-You can run the `dev` version of the app in Docker using the commands below.
-- build `dev` image:
-```sh
-docker build --target dev -t laserweb:dev .
-```
-- run image:
-```sh
-docker run -it -device=/dev/ttyUSB0 --rm -p 8000:8000 laserweb:dev
-```
-- connect to app: http://localhost:8000
-
-To build the release version:
-```sh
-docker build -f Dockerfile.release -t laserweb:release .
-```
+See the separate [Docker Guide](DOCKER.md).
 
 ## Community
-Please use the community forum on https://forum.makerforums.info/c/cad-cam/laserweb-cncweb/78 for questions and support.
+Please use the community forum on https://forum.makerforums.info/c/laserweb-cncweb for questions and support.
 Please only report confirmed bugs on the git [Issues tab](https://github.com/LaserWeb/LaserWeb4/issues).
 
 ## Supported firmwares
@@ -51,11 +24,12 @@ Note: Ever changing. See the Issues tab above for details.
 | Grbl > v1.1f (ATmega328)  | Yes        | Good                |   Great      | Yes - improvements                |
 | Grbl-Mega (ATmega2560)    | Yes        | Good                |   Great      | Yes - improvements                |
 | Grbl-LPC (LPC176x)        | Yes        | Great               |   Great      | Yes - improvements                |
-| Grbl_ESP32 (ESP32)        | Yes        | Great               |   Great      | Yes - improvements                |
+| Grbl_ESP32 (ESP32)        | Yes        | Great               |   Great      | No  - Superseded by FluuidNC      |
+| FluidNC (ESP32)           | Yes        | Great               |   Great      | Yes - improvements                |
 | Smoothieware              | Yes *      | Okayish             |   Okayish    | Yes - improvements                |
 | TinyG                     | Yes        | Unknown             |   Good       | Yes - improvements                |
-| Marlin                    | Yes        | Unknown             |   No         | Yes - improvements                | 
-| MarlinKimbra              | Yes        | Unknown             |   No         | Yes - improvements                | 
+| Marlin                    | Yes        | Unknown             |   No         | Yes - improvements                |
+| MarlinKimbra              | Yes        | Unknown             |   No         | Yes - improvements                |
 | Repetier                  | Yes        | Unknown             |   No         | Yes - improvements                |
 | RepRapFirmware            | Yes        | Unknown             |   Yes        | Yes - improvements                |
 
@@ -73,5 +47,6 @@ If you want to contribute, below are long standing community-requested enhanceme
 
 ## How to contribute ?
 
-Details on [https://github.com/LaserWeb/LaserWeb4/wiki/How-to-Contribute](https://github.com/LaserWeb/LaserWeb4/wiki/How-to-Contribute)
+To set up a development environment see the [Developer HowTo](FRONTEND-DEVELOPMENT.md) in the repo.
+Further details are on [https://github.com/LaserWeb/LaserWeb4/wiki/How-to-Contribute](https://github.com/LaserWeb/LaserWeb4/wiki/How-to-Contribute)
 
