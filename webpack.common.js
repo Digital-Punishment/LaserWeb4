@@ -4,32 +4,59 @@ var path = require('path');
 var src_path = path.resolve('./src');
 var dist_path = path.resolve('./dist');
 
+const HtmlWebpackPlugin = require("html-webpack-plugin");
+const MiniCssExtractPlugin = require("mini-css-extract-plugin");
+const CopyPlugin = require("copy-webpack-plugin");
+
 module.exports = {
     context: src_path,
     entry: [
-        'babel-polyfill', './index.js'
+        './index.js'
     ],
     output: {
         path: dist_path,
-        filename: 'index.js'
+        filename: "[name]_[contenthash].bundle.js",
+        clean: true
+    },
+    performance: {
+        hints: false,
     },
     module: {
         rules: [{
-            test: /\.js$/,
+            test: /\.(?:js|mjs|cjs|jsx?)$/i,
             exclude: /node_modules/,
-            use: [{
-                loader: 'babel-loader',
+            use: {
+                loader: "babel-loader",
                 options: {
-                    presets: ['react'],
-                    plugins: ['transform-es2015-destructuring', 'transform-es2015-parameters', 'transform-object-rest-spread', 'transform-es2015-modules-commonjs']
-                }
-            }],
+                    cacheDirectory: true,
+                    presets: [
+                        [
+                            "@babel/preset-env",
+                            {
+                                useBuiltIns: "usage",
+                                corejs: "3.45",
+                            },
+                        ],
+                        [
+                            "@babel/preset-react",
+                            {
+                                runtime: "automatic",
+                            },
+                        ],
+                    ],
+                    plugins: [
+                        ["@babel/plugin-proposal-decorators", { "version": "legacy" }]
+                    ]
+                },
+            },
+            generator: {
+                filename: "[name]_[contenthash][ext][query]",
+            },
         },
         {
             test: /\.css$/,
-            use: [{
-                loader: "style-loader"
-            },
+            use: [
+                MiniCssExtractPlugin.loader,
             {
                 loader: "css-loader",
                 options: {
@@ -38,78 +65,40 @@ module.exports = {
             }]
         },
         {
-            test: /\.png$/,
-            use: [{
-                loader: "url-loader",
-                options: {
-                    limit: 100000
-                }
-            }]
+            test: /\.(png|jpe?g|gif|webp|ico)$/i,
+            type: "asset/resource",
+            generator: {
+                filename: "img/[name]_[contenthash][ext]",
+            },
         },
         {
-            test: /\.jpg$/,
-            use: [{
-                loader: "file-loader"
-            }]
-        },
-        {
-            test: /\.(woff|woff2)(\?v=\d+\.\d+\.\d+)?$/,
-            use: [{
-                loader: "url-loader",
-                options: {
-                    limit: 10000,
-                    mimetype: "application/font-woff"
-                }
-            }]
-        },
-        {
-            test: /\.ttf(\?v=\d+\.\d+\.\d+)?$/,
-            use: [{
-                loader: "url-loader",
-                options: {
-                    limit: 10000,
-                    mimetype: "application/octet-stream"
-                }
-            }]
-        },
-        {
-            test: /\.eot(\?v=\d+\.\d+\.\d+)?$/,
-            use: [{
-                loader: "file-loader"
-            }]
+            test: /\.(woff2?|eot|ttf|otf)(\?v=\d+\.\d+\.\d+)?$/,
+            type: "asset/resource",
+            generator: {
+                filename: "fonts/[name]_[contenthash][ext]",
+            },
         },
         {
             test: /\.svg(\?v=\d+\.\d+\.\d+)?$/,
-            use: [{
-                loader: "url-loader",
-                options: {
-                    limit: 10000,
-                    mimetype: "image/svg+xml"
-                }
-            }]
+            type: "asset",
+            generator: {
+                filename: "img/[name]_[contenthash][ext]",
+            },
         },
         {
             test: /\.wasm$/,
-            use: [{
-                loader: "file-loader",
-                options: {
-                    publicPath: "dist/"
-                }
-            }]
+            type: "asset/resource",
+            generator: {
+                filename: "[name]_[contenthash][ext]",
+            },
         },
         {
             test: /\.md$/,
             use: [{
+                loader: "html-loader",
+            },
+            {
                 loader: "markdown-loader"
-            }]
-        },
-        {
-            test: /\.swf$/,
-            use: [{
-                loader: "file-loader",
-                options: {
-                    name: "[path][name].[ext]"
-                }
             }]
         },
         {
@@ -118,12 +107,24 @@ module.exports = {
                 loader: "worker-loader",
                 options: {
                     esModule: false,
-                    filename: "[contenthash].worker.js"
+                    filename: "workers/[name]_[contenthash].worker.js"
                 }
             }]
         }]
     },
     plugins: [
+        new HtmlWebpackPlugin({
+            template: "./index.html",
+            favicon: "./favicon.ico"
+        }),
+        new MiniCssExtractPlugin({
+            filename: "[name]_[contenthash].css",
+        }),
+        new CopyPlugin({
+            patterns: [
+                { from: "./cnctoolpath.svg", to: "cnctoolpath.svg" },
+            ],
+        }),
         new webpack.ProvidePlugin({$: 'jquery', jQuery: 'jquery'}),
         new webpack.HotModuleReplacementPlugin(),
     ],
