@@ -58,7 +58,7 @@
     "clipper-lib": "^6.4.2",
     "color-convert": "^2.0.1",
     "copy-webpack-plugin": "^13.0.1",
-    "css-loader": "^6.11.0",
+    "css-loader": "^7.1.2",
     "flat": "^5.0.2",
     "floyd-steinberg": "^1.0.6",
     "font-awesome": "^4.7.0",
@@ -75,6 +75,7 @@
     "lw.raster-to-gcode": "git+https://github.com/LaserWeb/lw.raster-to-gcode.git",
     "lw.svg-curves": "^0.1.0",
     "lw.svg-path": "^0.1.0",
+    "markdown-loader": "^8.0.0",
     "marked": "^4.0.10",
     "mini-css-extract-plugin": "^2.9.4",
     "object-to-string": "^1.0.0",
@@ -97,7 +98,7 @@
     "sillyname": "^0.1.0",
     "slug": "^5.2.0",
     "socket.io-client": "^4.4.1",
-    "style-loader": "^3.3.4",
+    "style-loader": "^4.0.0",
     "uuid": "^8.3.2",
     "validatorjs": "^3.22.1",
     "vex-js": "^4.1.0",
@@ -114,11 +115,9 @@
     "core-js": "^3.45.1",
     "dxf": "^4.6.1",
     "json-stringify-safe": "^5.0.1",
-    "markdown-loader": "^8.0.0",
     "object.omit": "^3.0.0",
     "prop-types": "^15.8.1",
     "script-loader": "^0.7.2",
-    "snapsvg-cjs": "^0.0.6",
-    "string-loader": "0.0.1"
+    "snapsvg-cjs": "^0.0.6"
   }
 }
