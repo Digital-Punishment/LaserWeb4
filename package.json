@@ -84,7 +84,6 @@
     "queue": "^6.0.2",
     "react": "^16.14.0",
     "react-bootstrap": "^0.31.2",
-    "react-contextmenu": "^2.11.0",
     "react-dom": "^16.14.0",
     "react-draggable": "^4.4.4",
     "react-redux": "^5.1.1",
@@ -111,6 +110,7 @@
     "xregexp": "^5.1.0"
   },
   "dependencies": {
+    "@firefox-devtools/react-contextmenu": "^5.2.3",
     "bootstrap-range-input": "^1.0.0",
     "core-js": "^3.45.1",
     "dxf": "^4.6.1",

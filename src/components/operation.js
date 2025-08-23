@@ -40,7 +40,7 @@ import { confirm } from './laserweb'
 
 import { SETTINGS_INITIALSTATE } from '../reducers/settings'
 
-import { ContextMenu, MenuItem, ContextMenuTrigger } from "react-contextmenu";
+import { ContextMenu, MenuItem, ContextMenuTrigger } from "@firefox-devtools/react-contextmenu";
 import "../styles/context-menu.css";
 
 function StringInput(props) {
