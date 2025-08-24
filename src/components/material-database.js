@@ -88,9 +88,11 @@ class MaterialMachineProfile extends React.Component {
     render() {
         let { profiles, selected, onChange, blank = "*", label = "Profile Filter", ...rest } = this.props;
         let options = Object.entries(profiles).map((entry) => { let [value, item] = entry; return { value, label: item.machineLabel } });
-        let values = options.filter(({value}) => value === selected);
-        return <Select isMulti={false} delimiter="," value={values} placeholder={label} options={options} onChange={(v) => { onChange(v.value) }} />
-        // TODO: bring back multiselect
+        let values = []
+        if (selected) {
+            values = options.filter(({value}) => (typeof selected === 'string' ? value === selected : selected.includes(value)));
+        }
+        return <Select isMulti={true} delimiter="," value={values} placeholder={label} options={options} onChange={(v) => { onChange(v.map(({value}) => value)) }} />
     }
 
 }
