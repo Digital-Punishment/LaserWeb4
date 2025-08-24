@@ -15,7 +15,7 @@
 
 import React from 'react'
 import { connect } from 'react-redux';
-import Select from 'react-select';
+import Select, { components } from 'react-select';
 import { v4 as uuidv4 } from 'uuid';
 
 import { removeOperation, moveOperation, setCurrentOperation, operationRemoveDocument, setOperationAttrs, clearOperations, spreadOperationField, operationLatheTurnAdd, operationLatheTurnRemove, operationLatheTurnSetAttrs } from '../actions/operation';
@@ -119,10 +119,21 @@ function TableInput({ op, field, operationsBounds, fillColors, strokeColors, set
     </tbody></table></div>;
 }
 
-function ColorBox(v) {
-    let rgb = 'rgb(' + v.color[0] * 255 + ',' + v.color[1] * 255 + ',' + v.color[2] * 255 + ')';
+function ColorBoxOption({ data, ...props }) {
+    let rgb = 'rgb(' + data.color[0] * 255 + ',' + data.color[1] * 255 + ',' + data.color[2] * 255 + ')';
     return (
-        <span style={{ backgroundColor: rgb, width: 40, display: 'inline-block' }}>&nbsp;</span>
+        <components.Option {...props}>
+            <span style={{ backgroundColor: rgb, width: 40, display: 'inline-block' }}>&nbsp;</span>
+        </components.Option>
+    );
+}
+
+function ColorBoxValue({ data, ...props }) {
+    let rgb = 'rgb(' + data.color[0] * 255 + ',' + data.color[1] * 255 + ',' + data.color[2] * 255 + ')';
+    return (
+        <components.SingleValue {...props}>
+            <span style={{ backgroundColor: rgb, width: 40, display: 'inline-block' }}>&nbsp;</span>
+        </components.SingleValue>
     );
 }
 
@@ -144,13 +155,14 @@ class FilterInput extends React.Component {
         let colors = field.name === 'filterFillColor' ? fillColors : strokeColors;
         let value;
         if (raw)
-            value = JSON.stringify(raw);
+            value = colors.filter(({value}) => value === JSON.stringify(raw));
         else
             value = null;
         return (
             <Select
-                value={value} options={colors} onChange={this.onChange} searchable={false}
-                optionRenderer={ColorBox} valueRenderer={ColorBox} {...rest} />
+                value={value} options={colors} onChange={this.onChange}
+                isSearchable={false} isClearable={true} placeholder="Select a color..."
+                components={{Option: ColorBoxOption, SingleValue: ColorBoxValue}} {...rest} />
         );
     }
 }

@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom'
 import { connect } from 'react-redux';
 
-import Rnd from 'react-rnd';
+import { Rnd } from 'react-rnd';
 import Icon from './font-awesome'
 import Select from 'react-select'
 import Toggle from 'react-toggle'
@@ -32,9 +32,11 @@ export class VideoDeviceField extends React.Component {
     }
 
     render() {
+        let options = this.state.devices
+        let value = options.filter(({value}) => value === this.props.object[this.props.field]);
         return <FormGroup>
             <ControlLabel>{this.props.description}</ControlLabel>
-            <Select disabled={this.props.disabled} options={this.state.devices} value={this.props.object[this.props.field]} onChange={(v) => this.handleSelection(v)} clearable={false} />
+            <Select disabled={this.props.disabled} options={options} value={value} onChange={(v) => this.handleSelection(v)} clearable={false} />
         </FormGroup>
     }
 
@@ -84,7 +86,7 @@ export class VideoResolutionField extends React.Component {
 
     render() {
         let resolutions = this.state.resolutions.map((v) => { return { label: `${v.label} (${v.width} x ${v.height}) / ${v.ratio}`, value: v.label } })
-        let selected = this.props.object[this.props.field];
+        let selected = resolutions.filter(({value}) => value === this.props.object[this.props.field]);
         return <FormGroup>
             <ControlLabel>{this.props.description}</ControlLabel>
             <Select isLoading={this.state.isLoading} options={resolutions} value={selected} clearable={false} disabled={!this.props.deviceId} onChange={(v) => this.handleChange(v)} />

@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom'
 import { connect } from 'react-redux';
-import Rnd from 'react-rnd';
+import { Rnd } from 'react-rnd';
 import { canvasFilters } from '../lib/lw.raster2gcode/canvas-filters';
 import { OPERATION_GROUPS, OPERATION_FIELDS } from './operation';
 import { getSubset } from 'redux-localstorage-filter';

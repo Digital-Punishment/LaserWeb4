@@ -179,10 +179,12 @@ export class SelectField extends React.Component {
         let tooltip = <Tooltip id={"toolip_" + field} >{errors}</Tooltip>;
 
         let label = labelAddon ? <InputGroup.Addon>{description}{units ? " (" + units + ")" : undefined}{info}</InputGroup.Addon> : <ControlLabel>{description}{units ? " (" + units + ")" : undefined}{info}</ControlLabel>
+        let options = selectOptions(data);
+        let currentValue = object[field] || defaultValue;
+        let value = options.filter(({value}) => value === currentValue);
+        let props = { ...selectProps, options: options, value: value, onChange: (v) => dispatch(setAttrs({ [field]: v.value }, object.id)) };
 
-        let props = { ...selectProps, options: selectOptions(data), value: object[field] || defaultValue, onChange: (v) => dispatch(setAttrs({ [field]: v.value }, object.id)) }
-
-        let input = <InputGroup>{label}<Select {...props} /></InputGroup>
+        let input = <InputGroup>{label}<span><Select menuPortalTarget={document.body} styles={{ menuPortal: (base) => ({ ...base, zIndex: 9999 }) }} {...props} /></span></InputGroup>;
 
         return <TooltipFormGroup validationState={errors ? "error" : undefined}
             validationContent={errors}
