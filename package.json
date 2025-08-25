@@ -82,7 +82,7 @@
     "poly2tri": "^1.5.0",
     "prefix-keys": "^1.0.0",
     "queue": "^6.0.2",
-    "react-bootstrap": "^0.31.2",
+    "react-bootstrap": "^0.31.5",
     "redux-localstorage": "^1.0.0-rc5",
     "redux-localstorage-filter": "^0.1.1",
     "redux-logger": "^3.0.6",
