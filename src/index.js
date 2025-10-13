@@ -1,6 +1,7 @@
 import React from 'react'
 import { render } from 'react-dom'
-import { compose, applyMiddleware, createStore } from 'redux';
+import { compose } from 'redux';
+import { configureStore } from '@reduxjs/toolkit'
 import { Provider } from 'react-redux';
 import { createLogger } from 'redux-logger';
 
@@ -55,16 +56,15 @@ export const setDebug=(b) => {
     window.localStorage.setItem(DEBUG_KEY,String(b))
 }
 
-const middlewares=[];
-if (getDebug()) middlewares.push(createLogger({ collapsed: true }))
-middlewares.push(globalstoreMiddleWare)
-
-const middleware = compose(
-  applyMiddleware(...middlewares),
-  persistState(storage, LOCALSTORAGE_KEY),
-);
-
-const store = createStore(reducer, middleware);
+const store = configureStore({
+  reducer: reducer,
+  middleware: (getDefaultMiddleware) => {
+    const middleware = getDefaultMiddleware().concat(globalstoreMiddleWare);
+    if (getDebug()) middlewares.push(createLogger({ collapsed: true }));
+    return middleware
+  },
+  enhancers: (getDefaultEnhancers) => getDefaultEnhancers().concat(persistState(storage, LOCALSTORAGE_KEY)),
+})
 
 // Bad bad bad
 export function GlobalStore()
