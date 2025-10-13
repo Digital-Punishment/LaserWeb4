@@ -87,28 +87,26 @@ export function gcode(drawCommands) {
     };
 } // gcode
 
-export class GcodePreview {
-    constructor() {
-        this.arrayVersion = 0;
-    }
+export function parseGcodePreview(parsed, arrayVersion) {
 
-    setParsedGcode(parsed) {
-        this.arrayChanged = true;
-        ++this.arrayVersion;
+        const result = {};
+
+        result.arrayChanged = true;
+        result.arrayVersion = arrayVersion + 1;
         if (parsed.length < 2 * parsedStride) {
-            this.array = null;
-            this.g0Dist = 0;
-            this.g1Time = 0;
-            this.moves = 0;
+            result.array = null;
+            result.g0Dist = 0;
+            result.g1Time = 0;
+            result.moves = 0;
         } else {
             let array = new Float32Array((parsed.length - parsedStride) / parsedStride * drawStride * 2);
-            this.minX = Number.MAX_VALUE;
-            this.maxX = -Number.MAX_VALUE;
-            this.minY = Number.MAX_VALUE;
-            this.maxY = -Number.MAX_VALUE;
-            this.minA = Number.MAX_VALUE;
-            this.maxA = -Number.MAX_VALUE;
-            this.moves = 0;
+            result.minX = Number.MAX_VALUE;
+            result.maxX = Number.MIN_VALUE;
+            result.minY = Number.MAX_VALUE;
+            result.maxY = Number.MIN_VALUE;
+            result.minA = Number.MAX_VALUE;
+            result.maxA = Number.MIN_VALUE;
+            result.moves = 0;
 
             let g0Dist = 0, g1Time = 0;
             for (let i = 0; i < parsed.length / parsedStride - 1; ++i) {
@@ -132,13 +130,13 @@ export class GcodePreview {
                 // s
                 let t = parsed[i * parsedStride + 8];
 
-                this.minX = Math.min(this.minX, x1, x2);
-                this.maxX = Math.max(this.maxX, x1, x2);
-                this.minY = Math.min(this.minY, y1, y2);
-                this.maxY = Math.max(this.maxY, y1, y2);
-                this.minA = Math.min(this.minA, a1, a2);
-                this.maxA = Math.max(this.maxA, a1, a2);
-                this.moves ++;
+                result.minX = Math.min(result.minX, x1, x2);
+                result.maxX = Math.max(result.maxX, x1, x2);
+                result.minY = Math.min(result.minY, y1, y2);
+                result.maxY = Math.max(result.maxY, y1, y2);
+                result.minA = Math.min(result.minA, a1, a2);
+                result.maxA = Math.max(result.maxA, a1, a2);
+                result.moves += 1;
 
                 array[i * drawStride * 2 + 0] = g;
                 array[i * drawStride * 2 + 1] = x1;
@@ -164,37 +162,42 @@ export class GcodePreview {
                 array[i * drawStride * 2 + 14] = g0Dist;
                 array[i * drawStride * 2 + 15] = g1Time;
             }
-            this.array = array;
-            this.g0Dist = g0Dist;
-            this.g1Time = g1Time;
+            result.array = array;
+            result.g0Dist = g0Dist;
+            result.g1Time = g1Time;
         }
+        return result;
     }
 
-    draw(drawCommands, perspective, view, g0Rate, simTime, rotaryDiameter) {
-        if (this.drawCommands !== drawCommands) {
-            this.drawCommands = drawCommands;
-            if (this.buffer)
-                this.buffer.destroy();
-            this.buffer = null;
+export function calcGcodePreview(gcodePreview, drawCommands) {
+
+        const result = {...gcodePreview };
+
+        if (result.drawCommands !== drawCommands) {
+            result.drawCommands = drawCommands;
+            result.buffer = null;
         }
 
-        if (!this.array)
-            return;
+        if (!result.array)
+            return result;
 
-        if (!this.buffer)
-            this.buffer = drawCommands.createBuffer(this.array);
-        else if (this.arrayChanged)
-            this.buffer.setData(this.array);
-        this.arrayChanged = false;
+        if (!result.buffer)
+            result.buffer = drawCommands.createBuffer(result.array);
+        else if (result.arrayChanged)
+            result.buffer.setData(result.array);
+        result.arrayChanged = false;
 
+        return result;
+    }
+
+export function drawGcodePreview(gcodePreview, drawCommands, perspective, view, g0Rate, simTime, rotaryDiameter) {
         drawCommands.gcode({
             perspective,
             view,
             g0Rate,
             simTime,
             rotaryDiameter,
-            data: this.buffer,
-            count: this.array.length / drawStride,
+            data: gcodePreview.buffer,
+            count: gcodePreview.array.length / drawStride,
         });
-    }
 }; // GcodePreview

@@ -14,33 +14,31 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { mat2d, mat4, vec3, vec4 } from 'gl-matrix';
-import React from 'react'
-import { connect } from 'react-redux'
+import React, { useContext, useEffect, useState, useRef } from 'react'
+import { connect, useSelector, useDispatch } from 'react-redux'
 import ReactDOM from 'react-dom';
+import { useImmer } from "use-immer";
 
 import '../styles/simbar.css';
 
 
 import { GlobalStore } from '..';
-import { setCameraAttrs, zoomArea } from '../actions/camera'
 import { selectDocument, toggleSelectDocument, transform2dSelectedDocuments, removeDocumentSelected, cloneDocumentSelected } from '../actions/document';
-import { setWorkspaceAttrs } from '../actions/workspace';
 import { setSettingsAttrs } from '../actions/settings';
 
 import { runCommand, jogTo } from './com.js';
 
-import { withDocumentCache } from './document-cache'
+import { DocumentCacheContext } from './document-cache'
 import { Dom3d, Text3d } from './dom3d';
 import { DrawCommands } from '../draw-commands'
-import { GcodePreview } from '../draw-commands/GcodePreview'
+import { parseGcodePreview, calcGcodePreview, drawGcodePreview } from '../draw-commands/GcodePreview'
 import { CylImageMesh } from '../draw-commands/imageMesh'
-import { LaserPreview } from '../draw-commands/LaserPreview'
+import { parseLaserPreview, calcLaserPreview, drawLaserPreview } from '../draw-commands/LaserPreview'
 import { convertOutlineToThickLines } from '../draw-commands/thick-lines'
 import { Input } from './forms.js';
 import SetSize from './setsize';
 import { dist } from '../lib/cam';
 import { parseGcode } from '../lib/tmpParseGcode';
-import Pointable from '../lib/Pointable';
 import { clamp } from '../lib/helpers'
 import { objectHasMatchingFields, sameArrayContent } from '../lib/util.js';
 
@@ -56,7 +54,7 @@ import { ImagePort, ImageEditorButton } from './image-filters'
 
 import { LiveJogging } from './jog'
 
-import { keyboardLogger, bindKeys, unbindKeys } from './keyboard'
+import { useHotkeys } from 'react-hotkeys-hook';
 
 import { arucoProcess } from '../lib/omr.js';
 import { humanFileSize } from '../lib/helpers';
@@ -84,72 +82,107 @@ const MAJOR_GRID_SPACING = 50;
 const MINOR_GRID_SPACING = 10;
 const CROSSHAIR = 5
 
-class LightenMachineBounds {
-    draw(drawCommands, { perspective, view, x, y, width, height, bedColor }) {
-        if (!this.triangles || this.x !== x || this.y !== y || this.width !== width || this.height !== height) {
-            this.x = x;
-            this.y = y;
-            this.width = width;
-            this.height = height;
+function calcLightenMachineBounds(x, y, width, height) {
+        const result = {};
+            result.x = x;
+            result.y = y;
+            result.width = width;
+            result.height = height;
             let x2 = x + width;
             let y2 = y + height;
             let a = [
                 x, y, x2, y2, x, y2,
                 x, y, x2, y, x2, y2,
             ];
-            this.triangles = new Float32Array(a);
-        }
-        drawCommands.basic2d({ perspective, view, position: this.triangles, offset: 0, count: this.triangles.length / 2, color: bedColor, transform2d: [1, 0, 0, 1, 0, 0], primitive: drawCommands.gl.TRIANGLES });
-    }
+            result.triangles = new Float32Array(a);
+        return result;
 };
 
-class Grid {
-    draw(drawCommands, { perspective, view, width, height, major = MAJOR_GRID_SPACING, minor = MINOR_GRID_SPACING, xcolor, ycolor }) {
-        if (!this.maingrid || !this.origin || this.width !== width || this.height !== height) {
-            this.width = width;
-            this.height = height;
+function calcGrid(width, height, major = MAJOR_GRID_SPACING, minor = MINOR_GRID_SPACING) {
+        const result = {};
+            result.width = width;
+            result.height = height;
             let a = [];
             let b = [];
-            a.push(-this.width, -this.height, 0, this.width, -this.height, 0);
-            a.push(-this.width, -this.height, 0, -this.width, this.height, 0);
-            for (let x = minor; x < this.width; x += minor) {
-                a.push(x, -this.height, 0, x, this.height, 0);
-                a.push(-x, -this.height, 0, -x, this.height, 0);
+            a.push(-result.width, -result.height, 0, result.width, -result.height, 0);
+            a.push(-result.width, -result.height, 0, -result.width, result.height, 0);
+            for (let x = minor; x < result.width; x += minor) {
+                a.push(x, -result.height, 0, x, result.height, 0);
+                a.push(-x, -result.height, 0, -x, result.height, 0);
                 if (x % major === 0) {
-                    b.push(x, -this.height, 0, x, this.height, 0);
-                    b.push(-x, -this.height, 0, -x, this.height, 0);
+                    b.push(x, -result.height, 0, x, result.height, 0);
+                    b.push(-x, -result.height, 0, -x, result.height, 0);
                 }
             }
-            a.push(this.width, -this.height, 0, this.width, this.height, 0);
-            for (let y = minor; y < this.height; y += minor) {
-                a.push(-this.width, y, 0, this.width, y, 0);
-                a.push(-this.width, -y, 0, this.width, -y, 0);
+            a.push(result.width, -result.height, 0, result.width, result.height, 0);
+            for (let y = minor; y < result.height; y += minor) {
+                a.push(-result.width, y, 0, result.width, y, 0);
+                a.push(-result.width, -y, 0, result.width, -y, 0);
                 if (y % major === 0) {
-                    b.push(-this.width, y, 0, this.width, y, 0);
-                    b.push(-this.width, -y, 0, this.width, -y, 0);
+                    b.push(-result.width, y, 0, result.width, y, 0);
+                    b.push(-result.width, -y, 0, result.width, -y, 0);
                 }
             }
-            a.push(-this.width, this.height, 0, this.width, this.height, 0);
-            this.maingrid = new Float32Array(a);
-            this.darkgrid = new Float32Array(b)
-            this.maincount = a.length / 3;
-            this.darkcount = b.length / 3;
+            a.push(-result.width, result.height, 0, result.width, result.height, 0);
+            result.maingrid = new Float32Array(a);
+            result.darkgrid = new Float32Array(b);
+            result.maincount = a.length / 3;
+            result.darkcount = b.length / 3;
 
             let c = [];
-            c.push(-this.width, 0, 0, this.width, 0, 0);
-            c.push(0, -this.height, 0, 0, this.height, 0);
-            this.origin = new Float32Array(c)
-            this.origincount = c.length / 3
-        }
+            c.push(-result.width, 0, 0, result.width, 0, 0);
+            c.push(0, -result.height, 0, 0, result.height, 0);
+            result.origin = new Float32Array(c);
+            result.origincount = c.length / 3;
+        return result;
+};
 
-        drawCommands.basic({ perspective, view, position: this.maingrid, offset: 0, count: this.maincount, color: [0.7, 0.7, 0.7, 0.95], scale: [1, 1, 1], translate: [0, 0, 0], primitive: drawCommands.gl.LINES }); // Gray grid
-        drawCommands.basic({ perspective, view, position: this.darkgrid, offset: 0, count: this.darkcount, color: [0.5, 0.5, 0.5, 0.95], scale: [1, 1, 1], translate: [0, 0, 0], primitive: drawCommands.gl.LINES }); // dark grid
+function drawGrid(grid, drawCommands, camera, colors){
+    let rgbx = [...convert.hex.rgb(colors.toolGridXColor)];
+    let rgby = [...convert.hex.rgb(colors.toolGridYColor)];
+    drawCommands.basic({
+        perspective: camera.perspective,
+        view: camera.view,
+        position: grid.maingrid,
+        offset: 0,
+        count: grid.maincount,
+        color: [0.7, 0.7, 0.7, 0.95],
+        scale: [1, 1, 1],
+        translate: [0, 0, 0],
+        primitive: drawCommands.gl.LINES
+    }); // Gray grid
+    drawCommands.basic({
+        perspective: camera.perspective,
+        view: camera.view,
+        position: grid.darkgrid,
+        offset: 0, count: grid.darkcount,
+        color: [0.5, 0.5, 0.5, 0.95],
+        scale: [1, 1, 1],
+        translate: [0, 0, 0],
+        primitive: drawCommands.gl.LINES
+    }); // Dark grid
 
-        let rgbx = [...convert.hex.rgb(xcolor)];
-        let rgby = [...convert.hex.rgb(ycolor)];
-        drawCommands.basic({ perspective, view, position: this.origin, offset: 0, count: 2, color: [rgbx[0]/255,rgbx[1]/255,rgbx[2]/255,1], scale: [1, 1, 1], translate: [0, 0, 0], primitive: drawCommands.gl.LINES });
-        drawCommands.basic({ perspective, view, position: this.origin, offset: 2, count: 2, color: [rgby[0]/255,rgby[1]/255,rgby[2]/255,1], scale: [1, 1, 1], translate: [0, 0, 0], primitive: drawCommands.gl.LINES });
-    }
+    drawCommands.basic({
+        perspective: camera.perspective,
+        view: camera.view,
+        position: grid.origin, offset: 0,
+        count: 2,
+        color: [rgbx[0]/255,rgbx[1]/255,rgbx[2]/255,1],
+        scale: [1, 1, 1],
+        translate: [0, 0, 0],
+        primitive: drawCommands.gl.LINES
+    }); //Axis X
+    drawCommands.basic({
+        perspective: camera.perspective,
+        view: camera.view,
+        position: grid.origin,
+        offset: 2,
+        count: 2,
+        color: [rgby[0]/255,rgby[1]/255,rgby[2]/255,1],
+        scale: [1, 1, 1],
+        translate: [0, 0, 0],
+        primitive: drawCommands.gl.LINES
+    }); //Axis Y
 };
 
 function GridText(props) {
@@ -169,16 +202,14 @@ function GridText(props) {
     return <div>{a}</div>;
 }
 
+function calcMachineBounds(x, y, width, height) {
 const markerOrthSize = 10;
 const markerPointSize = 6;
-
-class MachineBounds {
-    draw(drawCommands, { perspective, view, x, y, width, height }) {
-        if (!this.markers || this.x !== x || this.y !== y || this.width !== width || this.height !== height) {
-            this.x = x;
-            this.y = y;
-            this.width = width;
-            this.height = height;
+        const result = {}
+            result.x = x;
+            result.y = y;
+            result.width = width;
+            result.height = height;
             let x2 = x + width;
             let y2 = y + height;
             let a = [
@@ -191,11 +222,8 @@ class MachineBounds {
                 x, y2, x + markerOrthSize, y2, x - markerPointSize, y2 + markerPointSize,
                 x, y2, x - markerPointSize, y2 + markerPointSize, x, y2 - markerOrthSize,
             ];
-            this.markers = new Float32Array(a);
-        }
-
-        drawCommands.basic2d({ perspective, view, position: this.markers, offset: 0, count: this.markers.length / 2, color: [0, 0, 0, 0.8], transform2d: [1, 0, 0, 1, 0, 0], primitive: drawCommands.gl.TRIANGLES });
-    }
+            result.markers = new Float32Array(a);
+        return result;
 };
 
 class FloatingControls extends React.Component {
@@ -353,7 +381,7 @@ class FloatingControls extends React.Component {
         let tools;
         let found = false;
         let bounds = this.bounds = { x1: Number.MAX_VALUE, y1: Number.MAX_VALUE, x2: -Number.MAX_VALUE, y2: -Number.MAX_VALUE };
-        for (let cache of this.props.documentCacheHolder.cache.values()) {
+        for (let cache of this.props.documentCacheHolder.values()) {
             let doc = cache.document;
             if (doc.selected && doc.transform2d && cache.bounds) {
                 found = true;
@@ -494,8 +522,9 @@ class FloatingControls extends React.Component {
 const thickSquare = convertOutlineToThickLines([0, 0, 1, 0, 1, 1, 0, 1, 0, 0]);
 const m4Identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
-function cacheDrawing(fn, state, args) {
+function cacheDrawing(fn, oldState, setState, args) {
     let { drawCommands, width, height } = args;
+    let state = {...oldState};
     if (!objectHasMatchingFields(state, args)) {
         for (let key in args)
             if (args.hasOwnProperty(key))
@@ -509,6 +538,7 @@ function cacheDrawing(fn, state, args) {
             drawCommands.gl.clear(drawCommands.gl.COLOR_BUFFER_BIT | drawCommands.gl.DEPTH_BUFFER_BIT);
             fn(args);
         });
+        setState(state);
     }
     drawCommands.image({
         perspective: m4Identity, view: m4Identity, texture: state.frameBuffer.texture, selected: false,
@@ -558,14 +588,14 @@ export function drawDocument(perspective, view, drawCommands, cachedDocument, cr
     }
 } // drawDocument
 
-function drawDocuments({ perspective, view, drawCommands, documentCacheHolder }) {
-    for (let cachedDocument of documentCacheHolder.cache.values())
+function drawDocuments({ perspective, view, drawCommands, documentsCache }) {
+    for (let cachedDocument of documentsCache.values())
         if (cachedDocument.document.visible)
             drawDocument(perspective, view, drawCommands, cachedDocument, false);
 }
 
-function drawSelectedDocuments({ perspective, view, drawCommands, documentCacheHolder }) {
-    for (let cachedDocument of documentCacheHolder.cache.values()) {
+function drawSelectedDocuments({ perspective, view, drawCommands, documentsCache }) {
+    for (let cachedDocument of documentsCache.values()) {
         let { document } = cachedDocument;
         if (!document.selected)
             continue;
@@ -594,8 +624,8 @@ function drawSelectedDocuments({ perspective, view, drawCommands, documentCacheH
     }
 } // drawSelectedDocuments
 
-function drawDocumentsHitTest(perspective, view, drawCommands, documentCacheHolder) {
-    for (let cachedDocument of documentCacheHolder.cache.values()) {
+function drawDocumentsHitTest(perspective, view, drawCommands, documentsCache) {
+    for (let cachedDocument of documentsCache.values()) {
         let { document, hitTestId } = cachedDocument;
         let color = [((hitTestId >> 24) & 0xff) / 0xff, ((hitTestId >> 16) & 0xff) / 0xff, ((hitTestId >> 8) & 0xff) / 0xff, (hitTestId & 0xff) / 0xff];
         if (document.rawPaths) {
@@ -671,112 +701,169 @@ function drawCursor(perspective, view, drawCommands, cursorPos) {
     });
 }
 
-class WorkspaceContent extends React.Component {
+function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, workspace, updateWorkspace, parsedGcode, parsedLaser}) {
 
-    constructor(props) {
-        super(props);
-        this.bindings = [
-            [['alt+del', 'meta+backspace'], this.removeSelected.bind(this)],
-            [['ctrl+d'], this.cloneSelected.bind(this)],
-        ]
-        this.drawDocsState = {};
-        this.drawGcodeState = {};
-        this.drawSelDocsState = {};
-    }
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const [hotkeysEnabled, setHotkeysEnabled] = useState(false);
 
-    UNSAFE_componentWillMount() {
-        this.pointers = [];
-        this.lightenMachineBounds = new LightenMachineBounds();
-        this.grid = new Grid();
-        this.machineBounds = new MachineBounds();
-        this.setCanvas = this.setCanvas.bind(this);
-        this.documentCache = [];
-        this.onPointerDown = this.onPointerDown.bind(this);
-        this.onPointerMove = this.onPointerMove.bind(this);
-        this.onPointerUp = this.onPointerUp.bind(this);
-        this.onPointerCancel = this.onPointerCancel.bind(this);
+    const dispatch = useDispatch();
+    const settings = useSelector((state) => state.settings);
+    const documents = useSelector((state) => state.documents);
+    const mode = useSelector((state) => state.panes.selected);
+    const gcode = useSelector((state) => state.gcode);
+    const com = useSelector((state) => state.com);
 
-        this.handleMouseOver = this.handleMouseOver.bind(this)
-        this.handleMouseOut = this.handleMouseOut.bind(this)
+    const {documentsCache, cacheDrawCommands, setCacheDrawCommands, numImagesLoaded} = useContext(DocumentCacheContext);
 
-        this.contextMenu = this.contextMenu.bind(this);
-        this.wheel = this.wheel.bind(this);
-        this.setCamera(this.props);
+    const [viewCamera, setViewCamera] = useState(setCamera());
+    const [drawDocs, setDrawDocs] = useState({});
+    const [drawGcode, setDrawGcode] = useState({});
+    const [drawSelDocs, setDrawSelDocs] = useState({});
 
-        bindKeys(this.bindings, 'workspace')
-    }
+    const [lightenMachineBounds, setLightenMachineBounds] = useState(calcLightenMachineBounds (0, 0, 0, 0));
+    const [grid, setGrid] = useState(calcGrid(0, 0, MAJOR_GRID_SPACING, MINOR_GRID_SPACING));
+    const [machineBounds, setMachineBounds] = useState(calcMachineBounds(0, 0, 0, 0));
 
-    componentWillUnmount() {
-        unbindKeys(this.bindings, 'workspace')
-    }
+    const [gcodePreview, setGcodePreview] = useState();
+    const [laserPreview, setLaserPreview] = useState();
 
-    removeSelected(e) {
-        e.preventDefault();
-        if (this.props.mode === 'jog') return;
-        if (this.props.documents.find((d) => (d.selected)))
-            this.props.dispatch(removeDocumentSelected());
-    }
+    const [rotaryFrameBuffer, setRotaryFrameBuffer] = useState();
+    const [cylImageMesh, setCylImageMesh] = useState();
+    const [hitTestFrameBuffer, setHitTestFrameBuffer] = useState();
 
-    cloneSelected(e) {
-        e.preventDefault();
-        if (this.props.mode === 'jog') return;
-        if (this.props.documents.find((d) => (d.selected)))
-            this.props.dispatch(cloneDocumentSelected());
-    }
+    const [pointers, updatePointers] = useImmer([]);
+    const [fingers, setFingers] = useState(null);
+    const [pointerFlags, updatePointerFlags] = useImmer({movingObjects: false, adjustingCamera: false, moveStarted: false, needToSelect: null})
 
-    setCanvas(canvas) {
-        if (this.canvas === canvas)
-            return;
-        this.canvas = canvas;
-        if (this.drawCommands) {
-            this.drawCommands.destroy();
-            this.drawCommands = null;
+    const canvasRef = useRef(null);
+
+    useEffect(() => {
+        let machineX = settings.machineBottomLeftX - com.workOffsetX;
+        let machineY = settings.machineBottomLeftY - com.workOffsetY;
+        setLightenMachineBounds(calcLightenMachineBounds(machineX, machineY, settings.machineWidth, settings.machineHeight));
+        setGrid(calcGrid(settings.toolGridWidth, settings.toolGridHeight, Math.max(settings.toolGridMajorSpacing,1), Math.max(settings.toolGridMinorSpacing,0.1)));
+        setMachineBounds(calcMachineBounds(machineX, machineY, settings.machineWidth, settings.machineHeight));
+    }, [settings, workspace]);
+
+    useEffect(() => {
+        if (!cacheDrawCommands)
+            return
+        let {drawCommands} = cacheDrawCommands;
+        setGcodePreview(calcGcodePreview(parsedGcode, drawCommands));
+    }, [parsedGcode, cacheDrawCommands]);
+
+    useEffect(() => {
+        if (!cacheDrawCommands)
+            return
+        let {drawCommands} = cacheDrawCommands;
+        setLaserPreview(calcLaserPreview(parsedLaser, drawCommands));
+    }, [parsedLaser, cacheDrawCommands]);
+
+    useEffect(() => {
+        if (cacheDrawCommands && settings.machineAEnabled) {
+            if (!cylImageMesh)
+                setCylImageMesh(new CylImageMesh());
+            let {drawCommands} = cacheDrawCommands;
+            if (!rotaryFrameBuffer)
+                setRotaryFrameBuffer(drawCommands.createFrameBuffer(dimensions.width, dimensions.height));
+            else
+                rotaryFrameBuffer.resize(dimensions.width, dimensions.height);
         }
+    }, [dimensions, settings]);
+
+    useEffect(() =>{
+        setViewCamera(setCamera());
+    }, [dimensions, camera, settings]);
+
+    const hotkeysOptions = {enabled: hotkeysEnabled, preventDefault: true,};
+    useHotkeys(['alt+delete', 'meta+backspace'], () => removeSelected(), hotkeysOptions);
+    useHotkeys(['control+d'], () => cloneSelected(), hotkeysOptions);
+
+    function removeSelected() {
+        if (mode === 'jog') return;
+        if (documents.find((d) => (d.selected)))
+            dispatch(removeDocumentSelected());
+    }
+
+    function cloneSelected() {
+        if (mode === 'jog') return;
+        if (documents.find((d) => (d.selected)))
+            dispatch(cloneDocumentSelected());
+    }
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
         if (!canvas)
             return;
 
         let gl = canvas.getContext('webgl', { alpha: true, depth: true, antialias: true, preserveDrawingBuffer: true });
-        this.drawCommands = new DrawCommands(gl);
-        this.props.documentCacheHolder.drawCommands = this.drawCommands;
-        this.hitTestFrameBuffer = this.drawCommands.createFrameBuffer(this.props.width, this.props.height);
+        let drawCommands = new DrawCommands(gl)
+        setCacheDrawCommands({canvas, gl, drawCommands});
+        setHitTestFrameBuffer(drawCommands.createFrameBuffer(canvas.width, canvas.height));
+    },[]);
 
-        let draw = () => {
-            if (!this.canvas)
-                return;
+    useEffect(() => {
+        const observer = new ResizeObserver(entries => {
+            const { width, height } = entries[0].contentRect;
+            setDimensions({ width, height });
+            updateWorkspace((draft) => {
+                    draft.width = width;
+                    draft.height = height;
+                    });
 
-            if (this.props.settings.toolDisplayCache) {
-                if (this.__updating) {
-                    this.__updating = false;
-                } else {
-                    return requestAnimationFrame(draw);
-                }
-            }
-
-            if (this.props.width > 1 && this.props.height > 1 && (this.props.workspace.width !== this.props.width || this.props.workspace.height !== this.props.height)) {
-                this.props.dispatch(setWorkspaceAttrs({ width: this.props.width, height: this.props.height }));
-                if (!this.props.workspace.initialZoom) {
-                    let x = this.props.settings.machineBottomLeftX;
-                    let y = this.props.settings.machineBottomLeftY;
-                    if (!this.props.settings.showMachine) {
+                if (!workspace.initialZoom) {
+                    let x = settings.machineBottomLeftX;
+                    let y = settings.machineBottomLeftY;
+                    if (settings.showMachine) {
                         x = 0;
                         y = 0;
                     }
-                    this.props.dispatch(setWorkspaceAttrs({ initialZoom: true }));
-                    this.props.dispatch(zoomArea(
+                    updateWorkspace((draft) => {draft.inititalZoom = true });
+                    zoomArea(
                         x - 10,
                         y - 10,
-                        x + this.props.settings.machineWidth + 10,
-                        y + this.props.settings.machineHeight + 10
-                    ));
+                        x + settings.machineWidth + 10,
+                        y + settings.machineHeight + 10
+                    );
                 }
-            }
+        });
+
+        if (canvasRef.current)
+            observer.observe(canvasRef.current);
+
+        return () => {
+            observer.disconnect();
+        };
+    }, []);
+
+    const shouldComponentUpdate = [
+        dimensions,
+        settings,
+        workspace,
+        viewCamera,
+        lightenMachineBounds,
+        grid,
+        machineBounds,
+        gcodePreview,
+        laserPreview,
+        documentsCache,
+        cacheDrawCommands,
+        numImagesLoaded,
+        rotaryFrameBuffer,
+    ]
+
+    useEffect(() => {
+        let draw = () => {
+            if (!cacheDrawCommands)
+                return
+            let {canvas, gl, drawCommands} = cacheDrawCommands;
 
             gl.viewport(0, 0, canvas.width, canvas.height);
-            if (this.props.settings.showMachine || this.props.settings.machineAEnabled && this.props.workspace.showRotary) {
-                let rgb = [...convert.hex.rgb(this.props.settings.workSpaceColor)];
+            if (settings.showMachine || settings.machineAEnabled && workspace.showRotary) {
+                let rgb = [...convert.hex.rgb(settings.workSpaceColor)];
                 gl.clearColor(rgb[0]/255,rgb[1]/255,rgb[2]/255,1);
             } else {
-                let rgb = [...convert.hex.rgb(this.props.settings.workBedColor)];
+                let rgb = [...convert.hex.rgb(settings.workBedColor)];
                 gl.clearColor(rgb[0]/255,rgb[1]/255,rgb[2]/255,1);
             }
 
@@ -784,103 +871,140 @@ class WorkspaceContent extends React.Component {
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
             gl.enable(gl.BLEND);
 
-            if (this.props.settings.machineAEnabled && this.props.workspace.showRotary)
-                this.drawRotary(canvas, gl);
+            if (settings.machineAEnabled && workspace.showRotary)
+                drawRotary(canvas, gl, drawCommands);
             else
-                this.drawFlat(canvas, gl);
-
-            requestAnimationFrame(draw);
+                drawFlat(canvas, gl, drawCommands);
         };
         draw();
-    }
 
-    drawFlat(canvas, gl) {
-        let machineX = this.props.settings.machineBottomLeftX - this.props.workspace.workOffsetX;
-        let machineY = this.props.settings.machineBottomLeftY - this.props.workspace.workOffsetY;
+    }, shouldComponentUpdate);
 
-        if (this.props.settings.showMachine) {
+    function drawFlat(canvas, gl, drawCommands) {
+
+        //draw lightenMachineBounds
+        if (settings.showMachine) {
             gl.clearDepth(1);
-            let rgb = [...convert.hex.rgb(this.props.settings.workBedColor)];
-            this.lightenMachineBounds.draw(this.drawCommands, {
-		perspective: this.camera.perspective, view: this.camera.view, x: machineX, y: machineY, width: this.props.settings.machineWidth, height: this.props.settings.machineHeight, bedColor: [rgb[0]/255,rgb[1]/255,rgb[2]/255,1]
+            let rgb = [...convert.hex.rgb(settings.workBedColor)];
+            drawCommands.basic2d({
+                perspective: viewCamera.perspective,
+                view: viewCamera.view,
+                position: lightenMachineBounds.triangles,
+                offset: 0,
+                count: lightenMachineBounds.triangles.length / 2,
+                color: [rgb[0]/255,rgb[1]/255,rgb[2]/255,1],
+                transform2d: [1, 0, 0, 1, 0, 0],
+                primitive: drawCommands.gl.TRIANGLES
             });
             gl.clearDepth(1);
         }
 
-        this.grid.draw(this.drawCommands, {
-            perspective: this.camera.perspective, view: this.camera.view,
-            width: this.props.settings.toolGridWidth, height: this.props.settings.toolGridHeight,
-            minor: Math.max(this.props.settings.toolGridMinorSpacing,0.1),
-            major: Math.max(this.props.settings.toolGridMajorSpacing,1),
-            xcolor: this.props.settings.toolGridXColor,
-            ycolor: this.props.settings.toolGridYColor,
-        });
-        if (this.props.settings.showMachine)
-            this.machineBounds.draw(this.drawCommands, {
-                perspective: this.camera.perspective, view: this.camera.view, x: machineX, y: machineY, width: this.props.settings.machineWidth, height: this.props.settings.machineHeight,
-            });
-        if (this.props.workspace.showDocuments)
-            cacheDrawing(drawDocuments, this.drawDocsState, {
-                drawCommands: this.drawCommands,
-                width: canvas.width, height: canvas.height,
-                perspective: this.camera.perspective, view: this.camera.view,
-                documents: this.props.documents,
-                documentCacheHolder: this.props.documentCacheHolder,
-                numImagesLoaded: this.props.documentCacheHolder.numImagesLoaded,
-            });
-        if (this.props.workspace.showLaser) {
-            gl.blendEquation(this.drawCommands.EXT_blend_minmax.MIN_EXT);
-            gl.blendFunc(gl.ONE, gl.ONE);
-            this.props.laserPreview.draw(
-                this.drawCommands, this.camera.perspective, this.camera.view, this.props.settings.machineBeamDiameter,
-                this.props.settings.gcodeSMaxValue, this.props.settings.simG0Rate, this.props.workspace.simTime, this.props.settings.machineAAxisDiameter);
-            gl.blendEquation(gl.FUNC_ADD);
-            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        }
-        if (this.props.workspace.showGcode) {
-            let draw = () => {
-                this.props.gcodePreview.draw(
-                    this.drawCommands, this.camera.perspective, this.camera.view,
-                    this.props.settings.simG0Rate, this.props.workspace.simTime, this.props.settings.machineAAxisDiameter);
-            };
-            cacheDrawing(draw, this.drawGcodeState, {
-                drawCommands: this.drawCommands,
-                width: canvas.width, height: canvas.height,
-                perspective: this.camera.perspective, view: this.camera.view,
-                g0Rate: this.props.settings.simG0Rate,
-                simTime: this.props.workspace.simTime,
-                rotaryDiameter: this.props.settings.machineAAxisDiameter,
-                arrayVersion: this.props.gcodePreview.arrayVersion,
-            });
-        }
-        if (this.props.workspace.showDocuments)
-            cacheDrawing(drawSelectedDocuments, this.drawSelDocsState, {
-                drawCommands: this.drawCommands,
-                width: canvas.width, height: canvas.height,
-                perspective: this.camera.perspective, view: this.camera.view,
-                documents: this.props.documents,
-                documentCacheHolder: this.props.documentCacheHolder,
-                numImagesLoaded: this.props.documentCacheHolder.numImagesLoaded,
-            });
-        if (this.props.workspace.showCursor)
-            drawCursor(this.camera.perspective, this.camera.view, this.drawCommands, this.props.workspace.cursorPos);
-    } // drawFlat()
+        //Draw grid
+        drawGrid(grid, drawCommands, viewCamera, {toolGridXColor: settings.toolGridXColor, toolGridYColor: settings.toolGridYColor})
 
-    drawRotary(canvas, gl) {
-        let machineX = this.props.settings.machineBottomLeftX - this.props.workspace.workOffsetX;
-        let machineY = this.props.settings.machineBottomLeftY - this.props.workspace.workOffsetY;
+        //Draw machineBounds
+        if (settings.showMachine) {
+            drawCommands.basic2d({
+                perspective: viewCamera.perspective,
+                view: viewCamera.view,
+                position: machineBounds.markers,
+                offset: 0,
+                count: machineBounds.markers.length / 2,
+                color: [0, 0, 0, 0.8],
+                transform2d: [1, 0, 0, 1, 0, 0],
+                primitive: drawCommands.gl.TRIANGLES
+            });
+        };
+
+        //Draw Documents
+        if (workspace.showDocuments)
+            cacheDrawing(drawDocuments, drawDocs, setDrawDocs, {
+                drawCommands,
+                width: canvas.width,
+                height: canvas.height,
+                perspective: viewCamera.perspective,
+                view: viewCamera.view,
+                documents,
+                documentsCache,
+                numImagesLoaded,
+            });
+
+        if (gcodePreview && laserPreview){
+            //Draw Laser(Tool)
+            if (workspace.showLaser && laserPreview.buffer) {
+                gl.blendEquation(drawCommands.EXT_blend_minmax.MIN_EXT);
+                gl.blendFunc(gl.ONE, gl.ONE);
+                drawLaserPreview(
+                    laserPreview,
+                    drawCommands,
+                    viewCamera.perspective,
+                    viewCamera.view,
+                    settings.machineBeamDiameter,
+                    settings.gcodeSMaxValue,
+                    settings.simG0Rate,
+                    workspace.simTime,
+                    settings.machineAAxisDiameter);
+                gl.blendEquation(gl.FUNC_ADD);
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            }
+
+            //Draw GCode
+            if (workspace.showGcode && gcodePreview.buffer) {
+                let draw = () => {
+                    drawGcodePreview(
+                        gcodePreview,
+                        drawCommands,
+                        viewCamera.perspective,
+                        viewCamera.view,
+                        settings.simG0Rate,
+                        workspace.simTime,
+                        settings.machineAAxisDiameter);
+                };
+                cacheDrawing(draw, drawGcode, setDrawGcode, {
+                    drawCommands,
+                    width: canvas.width,
+                    height: canvas.height,
+                    perspective: viewCamera.perspective,
+                    view: viewCamera.view,
+                    g0Rate: settings.simG0Rate,
+                    simTime: workspace.simTime,
+                    rotaryDiameter: settings.machineAAxisDiameter,
+                    arrayVersion: gcodePreview.arrayVersion,
+                });
+            }
+        }
+
+        //Draw Selected Documents
+        if (workspace.showDocuments)
+            cacheDrawing(drawSelectedDocuments, drawSelDocs, setDrawSelDocs, {
+                drawCommands,
+                width: canvas.width,
+                height: canvas.height,
+                perspective: viewCamera.perspective,
+                view: viewCamera.view,
+                documents,
+                documentsCache,
+                numImagesLoaded,
+            });
+
+        //Draw cursor
+        if (workspace.showCursor)
+            drawCursor(viewCamera.perspective, viewCamera.view, drawCommands, com.cursorPos);
+    };
+
+    function drawRotary(canvas, gl, drawCommands) {
 
         let minX = Number.MAX_VALUE;
-        let maxX = -Number.MAX_VALUE;
+        let maxX = Number.MIN_VALUE;
         let minY = Number.MAX_VALUE;
-        let maxY = -Number.MAX_VALUE;
+        let maxY = Number.MIN_VALUE;
 
-        if (this.props.gcodePreview.array && this.props.laserPreview.array) {
-            if (this.props.workspace.showGcode || this.props.workspace.showLaser) {
-                minX = Math.min(minX, this.props.gcodePreview.minX - this.props.settings.machineBeamDiameter);
-                maxX = Math.max(maxX, this.props.gcodePreview.maxX + this.props.settings.machineBeamDiameter);
-                minY = Math.min(minY, this.props.gcodePreview.minY + this.props.gcodePreview.minA * this.props.settings.machineAAxisDiameter * Math.PI / 360 - this.props.settings.machineBeamDiameter);
-                maxY = Math.max(maxY, this.props.gcodePreview.maxY + this.props.gcodePreview.maxA * this.props.settings.machineAAxisDiameter * Math.PI / 360 + this.props.settings.machineBeamDiameter);
+        if (gcodePreview.array && laserPreview.array) {
+            if (workspace.showGcode || workspace.showLaser) {
+                minX = Math.min(minX, gcodePreview.minX - settings.machineBeamDiameter);
+                maxX = Math.max(maxX, gcodePreview.maxX + settings.machineBeamDiameter);
+                minY = Math.min(minY, gcodePreview.minY + gcodePreview.minA * settings.machineAAxisDiameter * Math.PI / 360 - settings.machineBeamDiameter);
+                maxY = Math.max(maxY, gcodePreview.maxY + gcodePreview.maxA * settings.machineAAxisDiameter * Math.PI / 360 + settings.machineBeamDiameter);
             }
         }
 
@@ -893,23 +1017,18 @@ class WorkspaceContent extends React.Component {
             maxY = 100;
         }
 
-        if (!this.rotaryFrameBuffer)
-            this.rotaryFrameBuffer = this.drawCommands.createFrameBuffer(this.props.width, this.props.height);
-        else
-            this.rotaryFrameBuffer.resize(this.props.width, this.props.height);
-
-        this.drawCommands.useFrameBuffer(this.rotaryFrameBuffer, () => {
-            let rgb = [...convert.hex.rgb(this.props.settings.workBedColor)];
+        drawCommands.useFrameBuffer(rotaryFrameBuffer, () => {
+            let rgb = [...convert.hex.rgb(settings.workBedColor)];
             gl.clearColor(rgb[0]/255,rgb[1]/255,rgb[2]/255,1);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             let perspective = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
             let sx = 2 / (maxX - minX);
-            let sy = 2 / Math.PI / this.props.settings.machineAAxisDiameter;
+            let sy = 2 / Math.PI / settings.machineAAxisDiameter;
             let band = (minY, maxY, f) => {
                 let n = 0;
-                for (let i = Math.floor(minY / Math.PI / this.props.settings.machineAAxisDiameter); ; ++i) {
-                    let y = i * Math.PI * this.props.settings.machineAAxisDiameter;
+                for (let i = Math.floor(minY / Math.PI / settings.machineAAxisDiameter); ; ++i) {
+                    let y = i * Math.PI * settings.machineAAxisDiameter;
                     if (y >= maxY)
                         break;
                     let view = [sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, 1, 0, -minX * sx - 1, -y * sy - 1, 0, 1];
@@ -919,143 +1038,139 @@ class WorkspaceContent extends React.Component {
                 }
             };
 
-            if (this.props.gcodePreview.array && this.props.laserPreview.array) {
-                if (this.props.workspace.showLaser) {
+            if (gcodePreview && laserPreview) {
+                if (workspace.showLaser && laserPreview.buffer) {
                     band(
-                        this.props.gcodePreview.minY - this.props.settings.machineBeamDiameter,
-                        this.props.gcodePreview.maxY + this.props.settings.machineBeamDiameter,
+                        gcodePreview.minY - settings.machineBeamDiameter,
+                        gcodePreview.maxY + settings.machineBeamDiameter,
                         view => {
-                            gl.blendEquation(this.drawCommands.EXT_blend_minmax.MIN_EXT);
+                            gl.blendEquation(drawCommands.EXT_blend_minmax.MIN_EXT);
                             gl.blendFunc(gl.ONE, gl.ONE);
-                            this.props.laserPreview.draw(
-                                this.drawCommands, perspective, view, this.props.settings.machineBeamDiameter,
-                                this.props.settings.gcodeSMaxValue, this.props.settings.simG0Rate, this.props.workspace.simTime, this.props.settings.machineAAxisDiameter);
+                            drawLaserPreview(
+                                laserPreview,
+                                drawCommands,
+                                perspective,
+                                view,
+                                settings.machineBeamDiameter,
+                                settings.gcodeSMaxValue,
+                                settings.simG0Rate,
+                                workspace.simTime,
+                                settings.machineAAxisDiameter);
                             gl.blendEquation(gl.FUNC_ADD);
                             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
                         });
                 }
-                if (this.props.workspace.showGcode) {
+                if (workspace.showGcode && gcodePreview.buffer) {
                     band(
-                        this.props.gcodePreview.minY - this.props.settings.machineBeamDiameter,
-                        this.props.gcodePreview.maxY + this.props.settings.machineBeamDiameter,
+                        gcodePreview.minY - settings.machineBeamDiameter,
+                        gcodePreview.maxY + settings.machineBeamDiameter,
                         view => {
-                            this.props.gcodePreview.draw(
-                                this.drawCommands, perspective, view,
-                                this.props.settings.simG0Rate, this.props.workspace.simTime, this.props.settings.machineAAxisDiameter);
+                            drawGcodePreview(
+                                gcodePreview,
+                                drawCommands,
+                                perspective,
+                                view,
+                                settings.simG0Rate,
+                                workspace.simTime,
+                                settings.machineAAxisDiameter);
                         });
                 }
             }
         });
 
+        //Draw grid
         gl.clear(gl.DEPTH_BUFFER_BIT);
-        this.grid.draw(this.drawCommands, {
-            perspective: this.camera.perspective, view: this.camera.view,
-            width: this.props.settings.toolGridWidth, height: this.props.settings.toolGridHeight,
-            minor: Math.max(this.props.settings.toolGridMinorSpacing,0.1),
-            major: Math.max(this.props.settings.toolGridMajorSpacing,1),
-            xcolor: this.props.settings.toolGridXColor,
-            ycolor: this.props.settings.toolGridYColor,
-        });
+        drawGrid(grid, drawCommands, viewCamera, {toolGridXColor: settings.toolGridXColor, toolGridYColor: settings.toolGridYColor})
 
-        if (this.props.settings.machineAAxisDiameter > 0) {
+        //Draw rotary cylinder
+        if (settings.machineAAxisDiameter > 0 && cylImageMesh) {
             gl.enable(gl.DEPTH_TEST);
-            this.cylImageMesh = this.cylImageMesh || new CylImageMesh();
-            this.cylImageMesh.draw(this.drawCommands, this.camera.perspective, this.camera.view, minX, maxX, this.props.settings.machineAAxisDiameter, 360, this.rotaryFrameBuffer.texture);
+            cylImageMesh.draw(drawCommands, viewCamera.perspective, viewCamera.view, minX, maxX, settings.machineAAxisDiameter, 360, rotaryFrameBuffer.texture);
             gl.disable(gl.DEPTH_TEST);
         }
 
-        if (this.props.workspace.showCursor)
-            drawCursor(this.camera.perspective, this.camera.view, this.drawCommands, this.props.workspace.cursorPos);
-    }
+        //Draw cursor
+        if (workspace.showCursor)
+            drawCursor(viewCamera.perspective, viewCamera.view, drawCommands, com.cursorPos);
+    };
 
-    componentDidUpdate() {
-        this.__updating = true;
-    }
-
-    UNSAFE_componentWillReceiveProps(nextProps) {
-        this.setCamera(nextProps);
-    }
-
-    setCamera(props) {
+    function setCamera() {
         let newCamera =
             calcCamera({
-                viewportWidth: props.width,
-                viewportHeight: props.height,
-                fovy: props.camera.fovy,
+                viewportWidth: dimensions.width,
+                viewportHeight: dimensions.height,
+                fovy: camera.fovy,
                 near: .1,
                 far: 2000,
-                eye: props.camera.eye,
-                center: props.camera.center,
-                up: props.camera.up,
-                showPerspective: props.camera.showPerspective,
-                machineX: props.settings.machineBottomLeftX - props.workspace.workOffsetX,
-                machineY: props.settings.machineBottomLeftY - props.workspace.workOffsetY,
+                eye: camera.eye,
+                center: camera.center,
+                up: camera.up,
+                showPerspective: camera.showPerspective,
+                machineX: settings.machineBottomLeftX - com.workOffsetX,
+                machineY: settings.machineBottomLeftY - com.workOffsetY,
             });
-        if (this.camera) {
-            if (sameArrayContent(this.camera.perspective, newCamera.perspective))
-                newCamera.perspective = this.camera.perspective;
-            if (sameArrayContent(this.camera.view, newCamera.view))
-                newCamera.view = this.camera.view;
-        }
-        this.camera = newCamera;
+        return newCamera;
     }
 
-    rayFromPoint(pageX, pageY) {
-        let r = ReactDOM.findDOMNode(this.canvas).getBoundingClientRect();
-        let x = 2 * (pageX - r.left) / (this.props.width) - 1;
-        let y = -2 * (pageY - r.top) / (this.props.height) + 1;
-        if (this.props.camera.showPerspective) {
-            let cursor = [x * this.props.width / this.props.height * Math.tan(this.camera.fovy / 2), y * Math.tan(this.camera.fovy / 2), -1];
-            let origin = vec3.transformMat4([], [0, 0, 0], this.camera.viewInv);
-            let direction = vec3.sub([], vec3.transformMat4([], cursor, this.camera.viewInv), origin);
+    function rayFromPoint(pageX, pageY) {
+        let r = ReactDOM.findDOMNode(cacheDrawCommands.canvas).getBoundingClientRect();
+        let x = 2 * (pageX - r.left) / (dimensions.width) - 1;
+        let y = -2 * (pageY - r.top) / (dimensions.height) + 1;
+        if (camera.showPerspective) {
+            let cursor = [x * dimensions.width / dimensions.height * Math.tan(viewCamera.fovy / 2), y * Math.tan(viewCamera.fovy / 2), -1];
+            let origin = vec3.transformMat4([], [0, 0, 0], viewCamera.viewInv);
+            let direction = vec3.sub([], vec3.transformMat4([], cursor, viewCamera.viewInv), origin);
             return { origin, direction };
         } else {
-            let cursor = vec3.transformMat4([], [x, y, -1], this.camera.viewInv);
-            let origin = vec3.transformMat4([], [x, y, 0], this.camera.viewInv);
+            let cursor = vec3.transformMat4([], [x, y, -1], viewCamera.viewInv);
+            let origin = vec3.transformMat4([], [x, y, 0], viewCamera.viewInv);
             let direction = vec3.sub([], cursor, origin);
             return { origin, direction };
         }
     }
 
-    xyInterceptFromPoint(pageX, pageY) {
-        let { origin, direction } = this.rayFromPoint(pageX, pageY);
+    function xyInterceptFromPoint(pageX, pageY) {
+        if (!cacheDrawCommands || !viewCamera || !dimensions)
+            return
+        let { origin, direction } = rayFromPoint(pageX, pageY);
         if (!direction[2])
             return;
         let t = -origin[2] / direction[2];
         return [origin[0] + t * direction[0], origin[1] + t * direction[1], 0];
     }
 
-    hitTest(pageX, pageY) {
-        if (!this.canvas || !this.drawCommands || !this.props.workspace.showDocuments)
+    function hitTest(pageX, pageY) {
+        if (!cacheDrawCommands || !workspace.showDocuments)
             return;
-        if (this.props.settings.machineAEnabled && this.props.workspace.showRotary)
+        if (settings.machineAEnabled && workspace.showRotary)
             return;
         let result;
-        this.hitTestFrameBuffer.resize(this.canvas.width, this.canvas.height);
-        this.drawCommands.useFrameBuffer(this.hitTestFrameBuffer, () => {
-            let { gl } = this.drawCommands;
+        hitTestFrameBuffer.resize(cacheDrawCommands.canvas.width, cacheDrawCommands.canvas.height);
+        cacheDrawCommands.drawCommands.useFrameBuffer(hitTestFrameBuffer, () => {
+            let { gl } = cacheDrawCommands.drawCommands;
             gl.clearColor(1, 1, 1, 1);
             gl.clear(gl.COLOR_BUFFER_BIT);
             gl.disable(gl.BLEND);
-            let r = ReactDOM.findDOMNode(this.canvas).getBoundingClientRect();
+            let r = ReactDOM.findDOMNode(cacheDrawCommands.canvas).getBoundingClientRect();
             let x = Math.round((pageX - r.left) * window.devicePixelRatio);
-            let y = Math.round((this.props.height - pageY + r.top) * window.devicePixelRatio);
-            if (x >= 0 && x < this.canvas.width && y >= 0 && y < this.canvas.height) {
-                drawDocumentsHitTest(this.camera.perspective, this.camera.view, this.drawCommands, this.props.documentCacheHolder);
+            let y = Math.round((dimensions.height - pageY + r.top) * window.devicePixelRatio);
+            if (x >= 0 && x < cacheDrawCommands.canvas.width && y >= 0 && y < cacheDrawCommands.canvas.height) {
+                drawDocumentsHitTest(viewCamera.perspective, viewCamera.view, cacheDrawCommands.drawCommands, documentsCache);
                 let pixel = new Uint8Array(4);
                 gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
                 let hitTestId = (pixel[0] << 24) | (pixel[1] << 16) | (pixel[2] << 8) | pixel[3];
-                for (let cachedDocument of this.props.documentCacheHolder.cache.values())
+                for (let cachedDocument of documentsCache.values()){
                     if (cachedDocument.hitTestId === hitTestId)
                         result = cachedDocument;
-            }
+            }}
         });
         return result;
     }
 
-    zoom(pageX, pageY, amount) {
-        let r = ReactDOM.findDOMNode(this.canvas).getBoundingClientRect();
-        let camera = this.props.camera;
+    function zoom(pageX, pageY, amount) {
+        if (!cacheDrawCommands)
+            return
+        let r = ReactDOM.findDOMNode(cacheDrawCommands.canvas).getBoundingClientRect();
         let newFovy = Math.max(.02, Math.min(Math.PI - .02, camera.fovy * amount));
         let oldScale = vec3.distance(camera.eye, camera.center) * Math.tan(camera.fovy / 2) / (r.height / 2);
         let newScale = vec3.distance(camera.eye, camera.center) * Math.tan(newFovy / 2) / (r.height / 2);
@@ -1064,142 +1179,147 @@ class WorkspaceContent extends React.Component {
         let adjX = vec3.scale([], vec3.cross([], vec3.normalize([], vec3.sub([], camera.center, camera.eye)), camera.up), -dx);
         let adjY = vec3.scale([], camera.up, -dy);
         let adj = vec3.add([], adjX, adjY);
-        this.props.dispatch(setCameraAttrs({
-            eye: vec3.add([], camera.eye, adj),
-            center: vec3.add([], camera.center, adj),
-            fovy: newFovy,
-        }));
+        updateCamera((draft) => {
+            draft.eye = vec3.add([], camera.eye, adj);
+            draft.center = vec3.add([], camera.center, adj);
+            draft.fovy = newFovy;
+        });
     }
 
-    onPointerDown(e) {
+    function onPointerDown(e) {
         e.preventDefault();
         e.target.setPointerCapture(e.pointerId);
-        if (this.pointers.length && e.pointerType !== this.pointers[0].pointerType)
-            this.pointers = [];
-        this.pointers.push({ pointerId: e.pointerId, pointerType: e.pointerType, button: e.button, pageX: e.pageX, pageY: e.pageY, origPageX: e.pageX, origPageY: e.pageY });
-        this.movingObjects = false;
-        this.adjustingCamera = false;
-        this.needToSelect = null;
-        this.toggle = e.ctrlKey || e.shiftKey;
-        this.liveJoggingKey = e.altKey || e.metaKey
-        this.moveStarted = false;
-        this.fingers = null;
-        this.jogMode = this.props.mode == 'jog';
+        if (pointers.length && e.pointerType !== pointers[0].pointerType)
+            updatePointers([]);
+        updatePointers((draft) => {draft.push({ pointerId: e.pointerId, pointerType: e.pointerType, button: e.button, pageX: e.pageX, pageY: e.pageY, origPageX: e.pageX, origPageY: e.pageY })});
+        setFingers(null);
+        updatePointerFlags((draft) => {
+            draft.movingObjects = false;
+            draft.adjustingCamera = false;
+            draft.needToSelect = null;
+            draft.moveStarted = false;
+        });
 
-        if (LiveJogging.isEnabled() && this.liveJoggingKey && this.jogMode) {
-            let [jogX, jogY] = this.xyInterceptFromPoint(e.pageX, e.pageY);
-            let machineX = this.props.settings.machineBottomLeftX - this.props.workspace.workOffsetX;
-            let machineY = this.props.settings.machineBottomLeftY - this.props.workspace.workOffsetY;
-            jogX = Math.floor(clamp(jogX, machineX, this.props.settings.machineWidth - this.props.workspace.workOffsetX))
-            jogY = Math.floor(clamp(jogY, machineY, this.props.settings.machineHeight - this.props.workspace.workOffsetY))
-            let jogF = this.props.settings.jogFeedXY * ((this.props.settings.toolFeedUnits === 'mm/min') ? 1 : 60);
+        if (LiveJogging.isEnabled() && (e.altKey || e.metaKey) && mode == 'jog') {
+            let [jogX, jogY] = xyInterceptFromPoint(e.pageX, e.pageY);
+            let machineX = settings.machineBottomLeftX - com.workOffsetX;
+            let machineY = settings.machineBottomLeftY - com.workOffsetY;
+            jogX = Math.floor(clamp(jogX, machineX, settings.machineWidth - com.workOffsetX))
+            jogY = Math.floor(clamp(jogY, machineY, settings.machineHeight - com.workOffsetY))
+            let jogF = settings.jogFeedXY * ((settings.toolFeedUnits === 'mm/min') ? 1 : 60);
             CommandHistory.warn(`Live Jogging X${jogX} Y${jogY} F${jogF}`)
             return jogTo(jogX, jogY, undefined, 0, jogF)
         }
 
-        let cachedDocument = this.hitTest(e.pageX, e.pageY);
-        if (cachedDocument && e.button === 0 && !this.jogMode) {
-            this.movingObjects = true;
-            if (cachedDocument.document.selected)
-                this.needToSelect = cachedDocument.document.id;
-            else {
-                if (this.toggle)
-                    this.props.dispatch(toggleSelectDocument(cachedDocument.id));
-                else
-                    this.props.dispatch(selectDocument(cachedDocument.id));
-            }
+        let cachedDocument = hitTest(e.pageX, e.pageY);
+        if (cachedDocument && e.button === 0 && mode !== 'jog') {
+            updatePointerFlags((draft) => {draft.movingObjects = true});
+            if (cachedDocument.document.selected){
+                updatePointerFlags((draft) => {draft.needToSelect = cachedDocument.document.id});
+            } else {
+                if (e.ctrlKey || e.shiftKey){
+                    dispatch(toggleSelectDocument(cachedDocument.id));
+                } else{
+                    dispatch(selectDocument(cachedDocument.id));
+            }}
         } else {
-            this.adjustingCamera = true;
+            updatePointerFlags((draft) => {draft.adjustingCamera = true});
         }
     }
 
-    onPointerUp(e) {
+    function onPointerUp(e) {
         e.preventDefault();
-        if (!this.pointers.length || e.pointerType !== this.pointers[0].pointerType)
+        if (!pointers.length || e.pointerType !== pointers[0].pointerType)
             return;
-        this.pointers = this.pointers.filter(x => x.pointerId !== e.pointerId);
-        this.fingers = null;
-        if (!this.pointers.length) {
-            if (this.needToSelect) {
-                if (this.toggle)
-                    this.props.dispatch(toggleSelectDocument(this.needToSelect));
+        let newPointers = pointers.filter(x => x.pointerId !== e.pointerId);
+        updatePointers(newPointers);
+        setFingers(null);
+        if (!newPointers.length) {
+            if (pointerFlags.needToSelect) {
+                if (e.ctrlKey || e.shiftKey)
+                    dispatch(toggleSelectDocument(pointerFlags.needToSelect));
                 else
-                    this.props.dispatch(selectDocument(this.needToSelect));
-            } else if (this.adjustingCamera && !this.moveStarted)
-                this.props.dispatch(selectDocument(''));
+                    dispatch(selectDocument(pointerFlags.needToSelect));
+            } else if (pointerFlags.adjustingCamera && !pointerFlags.moveStarted)
+                dispatch(selectDocument(''));
         }
+        e.target.releasePointerCapture(e.pointerId);
     }
 
-    onPointerCancel(e) {
+    function onPointerCancel(e) {
         e.preventDefault();
-        this.pointers = this.pointers.filter(x => x.pointerId !== e.pointerId);
-        this.fingers = null;
+        updatePointers(pointers.filter(x => x.pointerId !== e.pointerId));
+        setFingers(null);
+        e.target.releasePointerCapture(e.pointerId);
     }
 
-    onPointerMove(e) {
+    function onPointerMove(e) {
         e.preventDefault();
-        let pointer = this.pointers.find(x => x.pointerId === e.pointerId);
-        if (!pointer)
+        let pointerIndex = pointers.findIndex(x => x.pointerId === e.pointerId);
+        if (pointerIndex == -1)
             return;
-        let dx = e.pageX - pointer.pageX;
-        let dy = pointer.pageY - e.pageY;
+        let dx = e.pageX - pointers[pointerIndex].pageX;
+        let dy = pointers[pointerIndex].pageY - e.pageY;
         if (Math.abs(dx) >= 10 || Math.abs(dy) >= 10)
-            this.moveStarted = true;
-        if (!this.moveStarted)
+            updatePointerFlags((draft) => {draft.moveStarted = true;});
+        if (!pointerFlags.moveStarted)
             return;
-        if (this.movingObjects) {
-            this.needToSelect = null;
-            let p1 = this.xyInterceptFromPoint(e.pageX, e.pageY);
-            let p2 = this.xyInterceptFromPoint(pointer.pageX, pointer.pageY);
+        if (pointerFlags.movingObjects) {
+            updatePointerFlags((draft) => {draft.needToSelect = null});
+            let p1 = xyInterceptFromPoint(e.pageX, e.pageY);
+            let p2 = xyInterceptFromPoint(pointers[pointerIndex].pageX, pointers[pointerIndex].pageY);
             if (p1 && p2)
-                this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, p1[0] - p2[0], p1[1] - p2[1]]));
-            pointer.pageX = e.pageX;
-            pointer.pageY = e.pageY;
-        } else if (this.adjustingCamera) {
-            let camera = this.props.camera;
-            pointer.pageX = e.pageX;
-            pointer.pageY = e.pageY;
+                dispatch(transform2dSelectedDocuments([1, 0, 0, 1, p1[0] - p2[0], p1[1] - p2[1]]));
+            updatePointers((draft) => {
+                draft[pointerIndex].pageX = e.pageX
+                draft[pointerIndex].pageY = e.pageY
+            })
+        } else if (pointerFlags.adjustingCamera) {
+            updatePointers((draft) => {
+                draft[pointerIndex].pageX = e.pageX
+                draft[pointerIndex].pageY = e.pageY
+            })
             if (e.pointerType === 'touch' && this.pointers.length >= 2) {
                 let centerX = this.pointers.reduce((acc, o) => acc + o.pageX, 0) / this.pointers.length;
                 let centerY = this.pointers.reduce((acc, o) => acc + o.pageY, 0) / this.pointers.length;
                 let distance = dist(
-                    this.pointers[0].pageX, this.pointers[0].pageY,
-                    this.pointers[1].pageX, this.pointers[1].pageY);
-                if (this.fingers && this.fingers.num == this.pointers.length) {
-                    if (this.pointers.length === 2) {
-                        let d = distance - this.fingers.distance;
-                        let origCenterX = this.pointers.reduce((acc, o) => acc + o.origPageX, 0) / this.pointers.length;
-                        let origCenterY = this.pointers.reduce((acc, o) => acc + o.origPageY, 0) / this.pointers.length;
-                        this.zoom(origCenterX, origCenterY, Math.exp(-d / 200));
-                    } else if (this.pointers.length === 3) {
-                        let dx = centerX - this.fingers.centerX;
-                        let dy = centerY - this.fingers.centerY;
+                    pointers[0].pageX, pointers[0].pageY,
+                    pointers[1].pageX, pointers[1].pageY);
+                if (fingers && fingers.num == pointers.length) {
+                    if (pointers.length === 2) {
+                        let d = distance - fingers.distance;
+                        let origCenterX = pointers.reduce((acc, o) => acc + o.origPageX, 0) / this.pointers.length;
+                        let origCenterY = pointers.reduce((acc, o) => acc + o.origPageY, 0) / this.pointers.length;
+                        zoom(origCenterX, origCenterY, Math.exp(-d / 200));
+                    } else if (pointers.length === 3) {
+                        let dx = centerX - fingers.centerX;
+                        let dy = centerY - fingers.centerY;
                         let rot = mat4.mul([],
                             mat4.fromRotation([], -dy / 100, vec3.cross([], camera.up, vec3.sub([], camera.eye, camera.center))),
                             mat4.fromRotation([], -dx / 100, camera.up));
-                        this.props.dispatch(setCameraAttrs({
-                            eye: vec3.add([], vec3.transformMat4([], vec3.sub([], camera.eye, camera.center), rot), camera.center),
-                            up: vec3.normalize([], vec3.transformMat4([], camera.up, rot)),
-                        }));
+                        updateCamera((draft) => {
+                            draft.eye = vec3.add([], vec3.transformMat4([], vec3.sub([], camera.eye, camera.center), rot), camera.center);
+                            draft.up = vec3.normalize([], vec3.transformMat4([], camera.up, rot));
+                        });
                     }
                 }
-                this.fingers = { num: this.pointers.length, centerX, centerY, distance };
+                setFingers({ num: pointers.length, centerX, centerY, distance });
             } else {
-                this.fingers = null;
-                if (pointer.button === 2) {
+                setFingers(null);
+                if (pointers[pointerIndex].button === 2) {
                     let rot = mat4.mul([],
                         mat4.fromRotation([], dy / 200, vec3.cross([], camera.up, vec3.sub([], camera.eye, camera.center))),
                         mat4.fromRotation([], -dx / 200, camera.up));
-                    this.props.dispatch(setCameraAttrs({
-                        eye: vec3.add([], vec3.transformMat4([], vec3.sub([], camera.eye, camera.center), rot), camera.center),
-                        up: vec3.normalize([], vec3.transformMat4([], camera.up, rot)),
-                    }));
-                } else if (pointer.button === 1) {
-                    this.zoom(pointer.origPageX, pointer.origPageY, Math.exp(-dy / 200));
-                } else if (pointer.button === 0) {
+                    updateCamera((draft) => {
+                        draft.eye = vec3.add([], vec3.transformMat4([], vec3.sub([], camera.eye, camera.center), rot), camera.center);
+                        draft.up = vec3.normalize([], vec3.transformMat4([], camera.up, rot));
+                    });
+                } else if (pointers[pointerIndex].button === 1) {
+                    zoom(pointers[pointerIndex].origPageX, pointers[pointerIndex].origPageY, Math.exp(-dy / 200));
+                } else if (pointers[pointerIndex].button === 0) {
                     let view = calcCamera({
-                        viewportWidth: this.props.width,
-                        viewportHeight: this.props.height,
+                        viewportWidth: dimensions.width,
+                        viewportHeight: dimensions.height,
                         fovy: camera.fovy,
                         near: .1,
                         far: 2000,
@@ -1207,133 +1327,176 @@ class WorkspaceContent extends React.Component {
                         center: [0, 0, 0],
                         up: [0, 1, 0],
                         showPerspective: false,
-                        machineX: this.props.settings.machineBottomLeftX - this.props.workspace.workOffsetX,
-                        machineY: this.props.settings.machineBottomLeftY - this.props.workspace.workOffsetY,
+                        machineX: settings.machineBottomLeftX - com.workOffsetX,
+                        machineY: settings.machineBottomLeftY - com.workOffsetY,
                     }).view;
-                    let scale = 2 / this.props.width / view[0];
+                    let scale = 2 / dimensions.width / view[0];
                     dx *= scale;
                     dy *= scale;
                     let n = vec3.normalize([], vec3.cross([], camera.up, vec3.sub([], camera.eye, camera.center)));
-                    this.props.dispatch(setCameraAttrs({
-                        eye: vec3.add([], camera.eye,
-                            vec3.add([], vec3.scale([], n, -dx), vec3.scale([], camera.up, -dy))),
-                        center: vec3.add([], camera.center,
-                            vec3.add([], vec3.scale([], n, -dx), vec3.scale([], camera.up, -dy))),
-                    }));
+                    updateCamera((draft) => {
+                        draft.eye = vec3.add([], camera.eye,
+                            vec3.add([], vec3.scale([], n, -dx), vec3.scale([], camera.up, -dy)));
+                        draft.center = vec3.add([], camera.center,
+                            vec3.add([], vec3.scale([], n, -dx), vec3.scale([], camera.up, -dy)));
+                    });
                 }
             }
         }
     }
 
-    handleMouseOver(e) {
-        keyboardLogger.setContext('workspace')
+    function handleMouseOver(e) {
+        setHotkeysEnabled(true);
     }
 
-    handleMouseOut(e) {
-        keyboardLogger.setContext('global')
+    function handleMouseOut(e) {
+        setHotkeysEnabled(false);
     }
 
-    wheel(e) {
-        this.zoom(e.pageX, e.pageY, Math.exp(e.deltaY / 2000));
+    function wheel(e) {
+        zoom(e.pageX, e.pageY, Math.exp(e.deltaY / 2000));
     }
 
-    contextMenu(e) {
+    function contextMenu(e) {
         e.preventDefault();
     }
 
-    shouldComponentUpdate(nextProps, nextState) {
-        return (
-            nextProps.width !== this.props.width ||
-            nextProps.height !== this.props.height ||
-            nextProps.settings.machineWidth !== this.props.settings.machineWidth || nextProps.settings.machineHeight !== this.props.settings.machineHeight ||
-            nextProps.settings.machineBottomLeftX !== this.props.settings.machineBottomLeftX || nextProps.settings.machineBottomLeftY !== this.props.settings.machineBottomLeftY ||
-            nextProps.settings.toolGridWidth !== this.props.settings.toolGridWidth || nextProps.settings.toolGridHeight !== this.props.settings.toolGridHeight ||
-            nextProps.settings.toolGridXColor !== this.props.settings.toolGridXColor || nextProps.settings.toolGridYColor !== this.props.settings.toolGridYColor ||
-            nextProps.workspace.workOffsetX !== this.props.workspace.workOffsetX || nextProps.workspace.workOffsetY !== this.props.workspace.workOffsetY ||
-            nextProps.documents !== this.props.documents ||
-            nextProps.camera !== this.props.camera ||
-            nextProps.mode !== this.props.mode ||
-            nextProps.workspace.cursorPos !== this.props.workspace.cursorPos ||
-            nextProps.simTime !== this.props.workspace.simTime ||
-            nextProps.gcode.content !== this.props.gcode.content
-        );
-    }
-
-    render() {
-        return (
+        return(
             <div style={{ touchAction: 'none', userSelect: 'none' }} >
-                <Pointable tagName='div' touchAction="none"
-                    onPointerDown={this.onPointerDown} onPointerMove={this.onPointerMove}
-                    onPointerUp={this.onPointerUp} onPointerCancel={this.onPointerCancel}
-                    onWheel={this.wheel} onContextMenu={this.contextMenu}
-                    onMouseOver={this.handleMouseOver} onMouseOut={this.handleMouseOut}>
+                <div style={{ touchAction: 'none' }}
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={onPointerCancel}
+                    onWheel={wheel}
+                    onContextMenu={contextMenu}
+                    onMouseOver={handleMouseOver}
+                    onMouseOut={handleMouseOut}>
                     <div className="workspace-content">
                         <canvas
-                            style={{ width: this.props.width, height: this.props.height }}
-                            width={Math.round(this.props.width * window.devicePixelRatio)}
-                            height={Math.round(this.props.height * window.devicePixelRatio)}
-                            ref={this.setCanvas} />
+                            style={{ width: width, height: height }}
+                            width={Math.round(width * window.devicePixelRatio)}
+                            height={Math.round(height * window.devicePixelRatio)}
+                            ref={canvasRef} />
                     </div>
-                    <Dom3d className="workspace-content workspace-overlay" camera={this.camera} width={this.props.width} height={this.props.height} settings={this.props.settings}>
-                        <GridText {...{ width: this.props.settings.toolGridWidth, height: this.props.settings.toolGridHeight, minor: Math.max(this.props.settings.toolGridMinorSpacing,0.1), major: Math.max(this.props.settings.toolGridMajorSpacing,1), xcolor: this.props.settings.toolGridXColor, ycolor: this.props.settings.toolGridYColor }} />
+                    <Dom3d className="workspace-content workspace-overlay" camera={viewCamera} width={dimensions.width} height={dimensions.height} settings={settings}>
+                        <GridText {...{ width: settings.toolGridWidth,
+                                        height: settings.toolGridHeight,
+                                        minor: Math.max(settings.toolGridMinorSpacing,0.1),
+                                        major: Math.max(settings.toolGridMajorSpacing,1),
+                                        xcolor: settings.toolGridXColor,
+                                        ycolor: settings.toolGridYColor
+                        }} />
                     </Dom3d>
-                </Pointable>
+                </div>
 
                 <SetSize className="workspace-content workspace-overlay" selector=".floating-controls">
                     <FloatingControls
-                        documents={this.props.documents} documentCacheHolder={this.props.documentCacheHolder} camera={this.camera}
-                        workspaceWidth={this.props.width} workspaceHeight={this.props.height} dispatch={this.props.dispatch}
-                        settings={this.props.settings}
+                        documents={documents} documentCacheHolder={documentsCache} camera={viewCamera}
+                        workspaceWidth={width} workspaceHeight={height} dispatch={dispatch}
+                        settings={settings}
                     />
                 </SetSize>
 
-                <div className={"workspace-content workspace-overlay " + this.props.mode}></div>
+                <div className={"workspace-content workspace-overlay " + mode}></div>
             </div>
         );
-    }
-} // WorkspaceContent
+}
+export default function Workspace({style}){
 
-WorkspaceContent = connect(
-    state => ({ settings: state.settings, documents: state.documents, camera: state.camera, workspace: state.workspace, mode: state.panes.selected, gcode: state.gcode })
-)(withDocumentCache(WorkspaceContent));
+    const gcode = useSelector((state) => state.gcode.content);
+    const settings = useSelector((state) => state.settings);
+    const com = useSelector((state) => state.com);
 
-class Workspace extends React.Component {
-    UNSAFE_componentWillMount() {
-        this.gcodePreview = new GcodePreview();
-        this.laserPreview = new LaserPreview();
-        this.setSimTime = e => {
-            let { workspace } = this.props;
-            if (e.target.value >= this.gcodePreview.g1Time + this.gcodePreview.g0Dist / this.props.settings.simG0Rate - .00001)
-                this.props.dispatch(setWorkspaceAttrs({ simTime: 1e10 }));
+    const {documentsCache} = useContext(DocumentCacheContext);
+
+    const [camera, updateCamera] = useImmer(resetCamera());
+    const [workspace, updateWorkspace] = useImmer({
+        width: 1000,
+        height: 1000,
+        g0Rate: 1000,
+        rotaryDiameter: 50,
+        simTime: 1e10,
+        showControls: true,
+        showGcode: true,
+        showLaser: true,
+        showDocuments: true,
+        showRotary: false,
+        showCursor: true,
+        showWebcam: false,
+        showRasterPreview: false,
+        initialZoom: false,
+        gcode: "",
+    });
+
+    const [parsedGcode, setParsedGcode] = useState({arrayVersion: 0});
+    const [parsedLaser, setParsedLaser] = useState({arrayVersion: 0});
+    const [simDetails, setSimDetails] = useState("No Gcode loaded")
+
+    let enableVideo = ((settings.toolVideoDevice !== null) || (!!settings.toolWebcamUrl));
+
+    useEffect(() => {
+        updateWorkspace((draft) => {draft.gcode = gcode});
+        updateWorkspace((draft) => {draft.simTime = 1e10 });
+        let parsedGC= parseGcode(gcode);
+        setParsedGcode(parseGcodePreview(parsedGC, parsedGcode.arrayVersion));
+        setParsedLaser(parseLaserPreview(parsedGC, parsedLaser.arrayVersion));
+    }, [gcode]);
+
+    useEffect(() => {
+        setSimDetails(updateSimDetails());
+    }, [parsedGcode, parsedLaser]);
+
+    function setSimTime(e) {
+            if (e.target.value >= parsedGcode.g1Time + parsedGcode.g0Dist / settings.simG0Rate - .00001)
+                updateWorkspace((draft) => {draft.simTime = 1e10 });
             else
-                this.props.dispatch(setWorkspaceAttrs({ simTime: +e.target.value }));
+                updateWorkspace((draft) => {draft.simTime = +e.target.value });
         };
-        this.zoomMachine = this.zoomMachine.bind(this);
-        this.zoomDoc = this.zoomDoc.bind(this);
-        this.zoomGcode = this.zoomGcode.bind(this);
-        this.toggleControls = this.toggleControls.bind(this);
-        this.showControls = true;
+
+    function resetCamera() {
+        return {
+            eye: [settings.machineWidth / 2, settings.machineHeight / 2, Math.max(settings.machineWidth, settings.machineHeight)],
+            center: [settings.machineWidth / 2, settings.machineHeight / 2, 0],
+            up: [0, 1, 0],
+            fovy: Math.PI / 2.6,
+            showPerspective: false,
+        };
     }
 
-    zoomMachine() {
-        let x = this.props.settings.machineBottomLeftX;
-        let y = this.props.settings.machineBottomLeftY;
-        if (!this.props.settings.showMachine) {
+    function zoomArea( x1, y1, x2, y2 ) {
+        let d = 300;
+        let cx = (x1 + x2) / 2 - settings.machineBottomLeftX + com.workOffsetX;
+        let cy = (y1 + y2) / 2 - settings.machineBottomLeftY + com.workOffsetY;
+        let fovy = 2 * Math.atan2(Math.max(Math.abs(y2 - y1), Math.abs(x2 - x1) * workspace.height / workspace.width) / 2, d);
+        updateCamera({
+            eye: [cx, cy, d],
+            center: [cx, cy, 0],
+            up: [0, 1, 0],
+            fovy,
+            showPerspective: false,
+        });
+    }
+
+    function zoomMachine() {
+        let x = settings.machineBottomLeftX;
+        let y = settings.machineBottomLeftY;
+        if (!settings.showMachine) {
             x = 0;
             y = 0;
         }
-        this.props.dispatch(zoomArea(
-            x - 10 - this.props.workspace.workOffsetX,
-            y - 10 - this.props.workspace.workOffsetY,
-            x + this.props.settings.machineWidth + 10 - this.props.workspace.workOffsetX,
-            y + this.props.settings.machineHeight + 10 - this.props.workspace.workOffsetY
-        ));
+        zoomArea(
+            x - 10 - com.workOffsetX,
+            y - 10 - com.workOffsetY,
+            x + settings.machineWidth + 10 - com.workOffsetX,
+            y + settings.machineHeight + 10 - com.workOffsetY
+        );
     }
 
-    zoomDoc() {
+    function zoomDoc() {
         let found = false;
-        let bounds = this.bounds = { x1: Number.MAX_VALUE, y1: Number.MAX_VALUE, x2: -Number.MAX_VALUE, y2: -Number.MAX_VALUE };
-        for (let cache of this.props.documentCacheHolder.cache.values()) {
+        let bounds = { x1: Number.MAX_VALUE, y1: Number.MAX_VALUE, x2: Number.MIN_VALUE, y2: Number.MIN_VALUE };
+        for (let cache of documentsCache.values()) {
             let doc = cache.document;
             if (doc.selected && doc.transform2d && cache.bounds) {
                 found = true;
@@ -1345,7 +1508,7 @@ class Workspace extends React.Component {
         }
 
         if (!found) {
-            for (let cache of this.props.documentCacheHolder.cache.values()) {
+            for (let cache of documentsCache.values()) {
                 let doc = cache.document;
                 if (doc.transform2d && cache.bounds) {
                     found = true;
@@ -1360,129 +1523,113 @@ class Workspace extends React.Component {
         if (found) {
             let marginX = (bounds.x2 - bounds.x1) / 50;
             let marginY = (bounds.y2 - bounds.y1) / 50;
-            this.props.dispatch(zoomArea(bounds.x1 - marginX, bounds.y1 - marginY, bounds.x2 + marginX, bounds.y2 + marginY));
+            zoomArea(bounds.x1 - marginX, bounds.y1 - marginY, bounds.x2 + marginX, bounds.y2 + marginY);
         }
     }
 
-    zoomGcode() {
-        if (this.gcodePreview.array) {
-            let marginX = (this.gcodePreview.maxX - this.gcodePreview.minX) / 50;
-            let marginY = (this.gcodePreview.maxY - this.gcodePreview.minY) / 50;
-            this.props.dispatch(zoomArea(this.gcodePreview.minX - marginX, this.gcodePreview.minY - marginY, this.gcodePreview.maxX + marginX, this.gcodePreview.maxY + marginY));
+    function zoomGcode() {
+        if (parsedGcode.array) {
+            let marginX = (parsedGcode.maxX - parsedGcode.minX) / 50;
+            let marginY = (parsedGcode.maxY - parsedGcode.minY) / 50;
+            zoomArea(parsedGcode.minX - marginX, parsedGcode.minY - marginY, parsedGcode.maxX + marginX, parsedGcode.maxY + marginY);
         }
     }
 
-
-    updateSimDetails() {
-        let totalSecs = Math.floor((this.gcodePreview.g1Time + this.gcodePreview.g0Dist / this.props.settings.simG0Rate) * 60);
+    function updateSimDetails() {
+        let totalSecs = Math.floor((parsedGcode.g1Time + parsedGcode.g0Dist / settings.simG0Rate) * 60);
         let simSummary = 'No Gcode loaded'
-        let codeSize = this.gcode.length;
+        let codeSize = gcode.length;
         if (totalSecs > 0) {
-            let activeSecs = Math.floor(this.gcodePreview.g1Time * 60);
+            let activeSecs = Math.floor(parsedGcode.g1Time * 60);
             let secs = totalSecs % 60;
             let mins = Math.floor(totalSecs / 60) % 60;
             let hrs = Math.floor(totalSecs / 3600);
             let duty = Math.floor(activeSecs / totalSecs * 100);
-            let xsize = this.gcodePreview.maxX - this.gcodePreview.minX;
-            let ysize = this.gcodePreview.maxY - this.gcodePreview.minY;
+            let xsize = parsedGcode.maxX - parsedGcode.minX;
+            let ysize = parsedGcode.maxY - parsedGcode.minY;
             if (hrs > 0) simSummary = 'Estimated run time: ' + hrs + 'h, ' + mins + 'm. Tool duty cycle: ' + duty + '%. ';
             else simSummary = 'Estimated run time: ' + mins + 'm, '+ secs + 's. Tool duty cycle: ' + duty + '%. ';
             simSummary += 'Size: ' + xsize.toFixed(2) + ' x ' + ysize.toFixed(2) + ' mm. ';
-            simSummary += "Code: " + humanFileSize(codeSize) + ", Moves: " + this.gcodePreview.moves;
+            simSummary += "Code: " + humanFileSize(codeSize) + ", Moves: " + parsedGcode.moves;
         } else if (codeSize > 0) {
             simSummary = "Analysis failed. No tool operations. Check code before using. " + humanFileSize(codeSize)
         }
         // CommandHistory.write(simSummary, CommandHistory.INFO);
-        $('#gcode-info-panel').html(simSummary.replace(/\. /g, '\n'));
+        return simSummary.replace(/\. /g, '\n');
     }
 
-    toggleControls() {
-        this.showControls = !this.showControls;
-        if (this.showControls) {
-            $('#workspace-controls').css('height','fit-content');
-            $('#analyse-button').css('display','inline-block');
-        $('#command-history').css('display','block');
-        } else {
-            $('#workspace-controls').css('height','42px');
-            $('#analyse-button').css('display','none');
-            $('#command-history').css('display','none');
-        }
-    }
-
-    render() {
-        let { camera, gcode, workspace, settings, setShowPerspective, setShowGcode, setShowLaser, setShowDocuments, setShowRotary, setShowWebcam, setRasterPreview, enableVideo } = this.props;
-        if (this.gcode !== gcode) {
-            this.gcode = gcode;
-            let parsedGcode = parseGcode(gcode);
-            this.gcodePreview.setParsedGcode(parsedGcode);
-            this.laserPreview.setParsedGcode(parsedGcode);
-            this.updateSimDetails();
-            workspace.simTime = 1e10;
-        }
-        return (
-            <div id="workspace" className="full-height" style={this.props.style}>
+    return (
+            <div id="workspace" className="full-height" style={style}>
                 <SetSize id="workspace-top">
-                    <WorkspaceContent gcodePreview={this.gcodePreview} laserPreview={this.laserPreview} />
+                    <WorkspaceContent camera={camera} updateCamera={updateCamera} zoomArea={zoomArea} workspace={workspace} updateWorkspace={updateWorkspace} parsedGcode={parsedGcode} parsedLaser={parsedLaser} />
                 </SetSize>
-                <div id="workspace-controls" style={{ height: 'fit-content' }}>
+                <div id="workspace-controls" style={ workspace.showControls ? { height: 'fit-content' } : { height: '42px' }}>
                     <div style={{ display: 'flex' }}>
                         <table style={{ flex: 'none' }}>
                             <tbody>
                                 <tr style={{ height: '42px'}} >
                                     <td colSpan='2'>
-                                        <button className='btn btn-default' style={{ paddingLeft: '0.1em', paddingRight: '0.1em' }}title='Show/Hide the workspace options, analyser and console' onClick={this.toggleControls}><i className="fa fa-fw fa-bars"></i></button>
-                                        <button className='btn btn-default' style={{ marginLeft: '4px' }} title='Scale view to Machine Bed' onClick={this.zoomMachine}><i className="fa fa-fw fa-search"></i>Mach</button>
-                                        <button className='btn btn-default' style={{ marginLeft: '4px' }} title='Scale view to Loaded Documents' onClick={this.zoomDoc}><i className="fa fa-fw fa-search"></i>Doc</button>
+                                        <button className='btn btn-default' style={{ paddingLeft: '0.1em', paddingRight: '0.1em' }} title='Show/Hide the workspace options, analyser and console' onClick={() => updateWorkspace((draft) => {draft.showControls = !workspace.showControls})}><i className="fa fa-fw fa-bars"></i></button>
+                                        <button className='btn btn-default' style={{ marginLeft: '4px' }} title='Scale view to Machine Bed' onClick={zoomMachine}><i className="fa fa-fw fa-search"></i>Mach</button>
+                                        <button className='btn btn-default' style={{ marginLeft: '4px' }} title='Scale view to Loaded Documents' onClick={zoomDoc}><i className="fa fa-fw fa-search"></i>Doc</button>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td>Perspective</td>
-                                    <td><input checked={camera.showPerspective} onChange={setShowPerspective} type="checkbox" /></td>
+                                    <td><input checked={camera.showPerspective} onChange={(e) => {updateCamera((draft) => {draft.showPerspective = e.target.checked })}} type="checkbox" /></td>
                                 </tr>
                                 <tr>
                                     <td>Show Gcode</td>
-                                    <td><input checked={workspace.showGcode} onChange={setShowGcode} type="checkbox" /></td>
+                                    <td><input checked={workspace.showGcode} onChange={(e) => {updateWorkspace((draft) => {draft.showGcode = e.target.checked })}} type="checkbox" /></td>
                                 </tr>
                                 <tr>
                                     <td>Show Tool</td>
-                                    <td><input checked={workspace.showLaser} onChange={setShowLaser} type="checkbox" /></td>
+                                    <td><input checked={workspace.showLaser} onChange={(e) => {updateWorkspace((draft) => {draft.showLaser = e.target.checked })}} type="checkbox" /></td>
                                 </tr>
                                 <tr>
                                     <td>Show Documents</td>
-                                    <td><input checked={workspace.showDocuments} onChange={setShowDocuments} type="checkbox" /></td>
+                                    <td><input checked={workspace.showDocuments} onChange={(e) => {updateWorkspace((draft) => {draft.showDocuments = e.target.checked })}} type="checkbox" /></td>
                                 </tr>
                                 {settings.machineAEnabled &&
                                     <tr>
                                         <td>Show Rotary</td>
-                                        <td><input checked={workspace.showRotary} onChange={setShowRotary} type="checkbox" /></td>
+                                        <td><input checked={workspace.showRotary} onChange={(e) => {updateWorkspace((draft) => {draft.showRotary = e.target.checked })}} type="checkbox" /></td>
                                     </tr>
                                 }
                                 {enableVideo &&
                                     <tr>
                                         <td>Show Webcam</td>
-                                        <td><input checked={workspace.showWebcam} onChange={setShowWebcam} type="checkbox" /></td>
+                                        <td><input checked={workspace.showWebcam} onChange={(e) => {updateWorkspace((draft) => {draft.showWebcam = e.target.checked })}} type="checkbox" /></td>
                                     </tr>
                                 }
                                 <tr>
                                     <td>Show Raster Preview</td>
-                                    <td><input checked={workspace.showRasterPreview} onChange={setRasterPreview} type="checkbox" /></td>
+                                    <td><input checked={workspace.showRasterPreview} onChange={(e) => {updateWorkspace((draft) => {draft.showRasterPreview = e.target.checked })}} type="checkbox" /></td>
                                 </tr>
                             </tbody>
                         </table>
                         <table style={{ marginLeft: '4px', height: "fit-content"}}>
                             <tbody>
-                                {(this.gcode.length > 0) &&
+                                {(gcode.length > 0) &&
                                     <tr style={{ height: '42px'}} >
                                         <td>
-                                            <button className='btn btn-default' title='Scale view to current Gcode' onClick={this.zoomGcode}><i className="fa fa-fw fa-search"></i>Gcode</button>
+                                            <button className='btn btn-default' title='Scale view to current Gcode' onClick={zoomGcode}><i className="fa fa-fw fa-search"></i>Gcode</button>
                                         </td>
                                     </tr>
                                 }
-                                {(this.gcode.length > 0) &&
+                                {(gcode.length > 0) &&
                                     <tr>
                                         <td colSpan="2">
                                             <div className='simbar'>
-                                                <input style={{ width: this.props.settings.simBarWidth + 'em' }} className='form-control' value={workspace.simTime} onChange={this.setSimTime} type="range" step="any" max={this.gcodePreview.g1Time + this.gcodePreview.g0Dist / this.props.settings.simG0Rate} glyphicon="transfer" />
+                                                <input
+                                                style={{ width: settings.simBarWidth + 'em' }}
+                                                className='form-control'
+                                                value={workspace.simTime}
+                                                onChange={setSimTime}
+                                                type="range"
+                                                step="any"
+                                                max={parsedGcode.g1Time + parsedGcode.g0Dist / settings.simG0Rate}
+                                                glyphicon="transfer" />
                                             </div>
                                         </td>
                                     </tr>
@@ -1490,35 +1637,18 @@ class Workspace extends React.Component {
                                 <tr>
                                     <td colSpan="2">
                                         <pre  style={{ padding: '9px 10px 5px 10px', fontSize: '90%', backgroundColor: 'inherit' }} className='help-block' id='gcode-info-panel'>
-                                            No Gcode loaded
+                                            {simDetails}
                                         </pre>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
-                        <CommandHistory style={{ flexGrow: 1, marginLeft: 10 }} onCommandExec={runCommand} />
+                        <CommandHistory style={ workspace.showControls ? { flexGrow: 1, marginLeft: 10, display:'block' } : { flexGrow: 1, marginLeft: 10, display:'none' }}  onCommandExec={runCommand} />
                     </div>
                 </div>
 
-                <VideoPort width={320} enabled={enableVideo && workspace.showWebcam} draggable="parent" useCanvas={this.props.settings.toolVideoOMR} canvasProcess={this.props.settings.toolVideoOMR ? arucoProcess: null} />
+                <VideoPort width={320} enabled={enableVideo && workspace.showWebcam} draggable="parent" useCanvas={settings.toolVideoOMR} canvasProcess={settings.toolVideoOMR ? arucoProcess: null} />
                 <ImagePort width={320} height={240} enabled={workspace.showRasterPreview} draggable="parent" />
-
             </div>
         )
-    }
 }
-Workspace = connect(
-    state => ({ camera: state.camera, gcode: state.gcode.content, workspace: state.workspace, settings: state.settings, enableVideo: ((state.settings.toolVideoDevice !== null) || (!!state.settings.toolWebcamUrl)) }),
-    dispatch => ({
-        dispatch,
-        setShowPerspective: e => dispatch(setCameraAttrs({ showPerspective: e.target.checked })),
-        setShowGcode: e => dispatch(setWorkspaceAttrs({ showGcode: e.target.checked })),
-        setShowLaser: e => dispatch(setWorkspaceAttrs({ showLaser: e.target.checked })),
-        setShowDocuments: e => dispatch(setWorkspaceAttrs({ showDocuments: e.target.checked })),
-        setShowRotary: e => dispatch(setWorkspaceAttrs({ showRotary: e.target.checked })),
-        setShowWebcam: e => dispatch(setWorkspaceAttrs({ showWebcam: e.target.checked })),
-        setRasterPreview: e => dispatch(setWorkspaceAttrs({ showRasterPreview: e.target.checked })),
-        runCommand: () => dispatch(runCommand()),
-    })
-)(withDocumentCache(Workspace));
-export default Workspace;

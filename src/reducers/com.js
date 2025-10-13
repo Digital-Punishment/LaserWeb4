@@ -9,7 +9,11 @@ export const COM_INITIALSTATE = {
     firmwareVersion: '',
 
     comInterfaces:[],
-    comPorts:[]
+    comPorts:[],
+
+    cursorPos: [0, 0, 0],
+    workOffsetX: 0,
+    workOffsetY: 0,
 }
 
 export function com(state = COM_INITIALSTATE, action) {

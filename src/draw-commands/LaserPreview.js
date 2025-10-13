@@ -109,11 +109,14 @@ export function laser(drawCommands) {
     };
 } // laser
 
-export class LaserPreview {
-    setParsedGcode(parsed) {
-        this.arrayChanged = true;
+export function parseLaserPreview(parsed, arrayVersion) {
+
+        const result = {};
+
+        result.arrayChanged = true;
+        result.arrayVersion = arrayVersion + 1;
         if (parsed.length < 2 * parsedStride) {
-            this.array = null;
+            result.array = null;
         } else {
             let array = new Float32Array((parsed.length - parsedStride) / parsedStride * drawStride * 6);
 
@@ -163,27 +166,33 @@ export class LaserPreview {
                     array[i * drawStride * 6 + vertex * drawStride + 12] = g1Time;
                 }
             }
-            this.array = array;
+            result.array = array;
         }
+        return result;
     }
 
-    draw(drawCommands, perspective, view, diameter, gcodeSMaxValue, g0Rate, simTime, rotaryDiameter) {
-        if (this.drawCommands !== drawCommands) {
-            this.drawCommands = drawCommands;
-            if (this.buffer)
-                this.buffer.destroy();
-            this.buffer = null;
+export function calcLaserPreview(laserPreview, drawCommands) {
+
+        const result = {...laserPreview};
+
+        if (result.drawCommands !== drawCommands) {
+            result.drawCommands = drawCommands;
+            result.buffer = null;
         }
 
-        if (!this.array)
-            return;
+        if (!result.array)
+            return result;
 
-        if (!this.buffer)
-            this.buffer = drawCommands.createBuffer(this.array);
-        else if (this.arrayChanged)
-            this.buffer.setData(this.array);
-        this.arrayChanged = false;
+        if (!result.buffer)
+            result.buffer = drawCommands.createBuffer(result.array);
+        else if (result.arrayChanged)
+            result.buffer.setData(result.array);
+        result.arrayChanged = false;
 
+        return result;
+    }
+
+export function drawLaserPreview(laserPreview, drawCommands, perspective, view, diameter, gcodeSMaxValue, g0Rate, simTime, rotaryDiameter) {
         drawCommands.laser({
             perspective,
             view,
@@ -192,8 +201,7 @@ export class LaserPreview {
             rotaryDiameter,
             radius: diameter / 2,
             gcodeSMaxValue: gcodeSMaxValue,
-            data: this.buffer,
-            count: this.array.length / drawStride,
+            data: laserPreview.buffer,
+            count: laserPreview.array.length / drawStride,
         });
-    }
 }; // LaserPreview

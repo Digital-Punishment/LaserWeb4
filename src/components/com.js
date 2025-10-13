@@ -7,7 +7,6 @@ import { Input, TextField, NumberField, ToggleField, SelectField, Info } from '.
 import { runStatus } from './jog.js';
 import { setSettingsAttrs } from '../actions/settings';
 import { setComAttrs } from '../actions/com';
-import { setWorkspaceAttrs } from '../actions/workspace';
 // import { setGcode } from '../actions/gcode';
 import CommandHistory from './command-history';
 
@@ -358,7 +357,7 @@ class Com extends React.Component {
                 $('#mY').html(ypos);
                 $('#mZ').html(zpos);
                 $('#mA').html(apos);
-                dispatch(setWorkspaceAttrs({ cursorPos: [xpos, ypos, zpos] }));
+                dispatch(setComAttrs({ cursorPos: [xpos, ypos, zpos] }));
             }
         });
 
@@ -390,7 +389,7 @@ class Com extends React.Component {
             }
             if (posChanged) {
                 CommandHistory.write('Workspace Offset: X= ' + xOffset + ', Y= ' + yOffset + ', Z= ' + zOffset + ', A= ' + aOffset, CommandHistory.INFO);
-                dispatch(setWorkspaceAttrs({ workOffsetX: +xOffset, workOffsetY: +yOffset }));
+                dispatch(setComAttrs({ workOffsetX: +xOffset, workOffsetY: +yOffset }));
             }
         });
 
