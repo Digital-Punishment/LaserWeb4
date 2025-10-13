@@ -13,9 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import PropTypes from 'prop-types';
-
-import React from 'react';
+import React, { createContext, useState, useEffect } from 'react';
 
 import { convertOutlineToThickLines } from '../draw-commands/thick-lines'
 import { filterClosedRawPaths, triangulateRawPaths } from '../lib/mesh';
@@ -24,42 +22,46 @@ import { filterClosedRawPaths, triangulateRawPaths } from '../lib/mesh';
 //   * doesn't belong in the store,
 //   * is computed from data in the store, and
 //   * is too expensive to recompute every render.
-export class DocumentCacheHolder extends React.Component {
-    constructor() {
-        super();
-        this.cache = new Map();
-        this.lastHitTestId = 0;
-        this.numImagesLoaded = 0;
+
+export const DocumentCacheContext = createContext();
+
+export function DocumentCacheHolder({style, documents, children}) {
+    const [documentsCache, setDocumentsCache] = useState(new Map());
+    const [cacheDrawCommands, setCacheDrawCommands] = useState();
+    const [lastHitTestId, setLastHitTestId] = useState(0);
+    const [numImagesLoaded, setNumImagesLoaded] = useState(0);
+
+    const documentCacheValue = {
+        documentsCache,
+        cache: documentsCache, //TODO remove this later
+        cacheDrawCommands,
+        setCacheDrawCommands,
+        numImagesLoaded,
+    };
+
+    useEffect(() => { setDocuments(documents) }, [documents]);
+
+    function getChildContext() {
+        return { documentCacheHolder: documentCacheValue };
     }
 
-    getChildContext() {
-        return { documentCacheHolder: this };
-    }
-
-    UNSAFE_componentWillMount() {
-        this.setDocuments(this.props.documents);
-    }
-
-    UNSAFE_componentWillReceiveProps(nextProps) {
-        this.setDocuments(nextProps.documents);
-    }
-
-    setDocuments(documents) {
-        if (this.documents !== documents) {
-            this.documents = documents;
-            let oldCache = this.cache;
-            this.cache = new Map();
+    function setDocuments(documents) {
+            let oldCache = documentsCache;
+            let newCache = new Map();
+            let currentHitTestId = lastHitTestId;
             for (let cachedDocument of oldCache.values())
                 cachedDocument.used = false;
             for (let document of documents) {
                 let cachedDocument = oldCache.get(document.id);
                 if (cachedDocument)
                     cachedDocument.document = document;
-                else
-                    cachedDocument = { id: document.id, document, hitTestId: ++this.lastHitTestId };
+                else {
+                    currentHitTestId += 1;
+                    cachedDocument = { id: document.id, document, hitTestId: currentHitTestId };
+                }
                 cachedDocument.used = true;
-                this.update(cachedDocument);
-                this.cache.set(document.id, cachedDocument);
+                update(cachedDocument);
+                newCache.set(document.id, cachedDocument);
             }
             for (let cachedDocument of oldCache.values()) {
                 if (!cachedDocument.used) {
@@ -69,10 +71,11 @@ export class DocumentCacheHolder extends React.Component {
                         cachedDocument.texture.destroy();
                 }
             }
-        }
+            setDocumentsCache(newCache);
+            setLastHitTestId(currentHitTestId);
     }
 
-    update(cachedDocument) {
+    function update(cachedDocument) {
         let { document } = cachedDocument;
         if (document.rawPaths) {
             if (cachedDocument.rawPaths !== document.rawPaths) {
@@ -111,11 +114,12 @@ export class DocumentCacheHolder extends React.Component {
             }
         } else if (document.type === 'image') {
             let updateTexture = () => {
-                if (this.drawCommands && cachedDocument.imageLoaded && (!cachedDocument.texture || cachedDocument.drawCommands !== this.drawCommands)) {
+                let {canvas, gl, drawCommands} = cacheDrawCommands;
+                if (drawCommands && cachedDocument.imageLoaded && (!cachedDocument.texture || cachedDocument.drawCommands !== drawCommands)) {
                     if (cachedDocument.texture)
                         cachedDocument.texture.destroy();
-                    cachedDocument.drawCommands = this.drawCommands;
-                    cachedDocument.texture = this.drawCommands.createTexture({ image: cachedDocument.image });
+                    cachedDocument.drawCommands = drawCommands;
+                    cachedDocument.texture = drawCommands.createTexture({ image: cachedDocument.image });
                 }
                 if (cachedDocument.texture) {
                     let t = document.transform2d;
@@ -140,7 +144,7 @@ export class DocumentCacheHolder extends React.Component {
                 cachedDocument.image.onload = () => {
                     if (cachedDocument.image === image) {
                         cachedDocument.imageLoaded = true;
-                        ++this.numImagesLoaded;
+                        setNumImagesLoaded(numImagesLoaded + 1);
                         updateTexture();
                     }
                 }
@@ -150,20 +154,15 @@ export class DocumentCacheHolder extends React.Component {
         }
     }
 
-    render() {
-        let p = { ...this.props };
-        delete p.documents;
         return (
-            <div {...p}>
-                {this.props.children}
-            </div >
+            <DocumentCacheContext.Provider value={documentCacheValue} style={style}>
+                {children}
+            </DocumentCacheContext.Provider>
         );
-    }
-}
-DocumentCacheHolder.childContextTypes = {
-    documentCacheHolder: PropTypes.any,
-};
 
+}
+
+//TODO remove wrapper
 export function withDocumentCache(Component) {
     class Wrapper extends React.Component {
         render() {
@@ -171,9 +170,6 @@ export function withDocumentCache(Component) {
                 <Component {...{ ...this.props, documentCacheHolder: this.context.documentCacheHolder }} />
             );
         }
-    };
-    Wrapper.contextTypes = {
-        documentCacheHolder: PropTypes.any,
     };
     return Wrapper;
 }
