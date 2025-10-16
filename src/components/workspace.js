@@ -403,9 +403,9 @@ function FloatingControls({width, height, documents, documentsCache, camera, wor
 
         let p =
             vec4.transformMat4([],
-                vec4.transformMat4([], [bounds.x1, bounds.y1, 0, 1], camera.view),
+                vec4.transformMat4([], [(bounds.x1 + bounds.x2) / 2, bounds.y1, 0, 1], camera.view),
                 camera.perspective);
-        let x = (p[0] / p[3] + 1) * workspaceWidth / 2 - 20 - width;
+        let x = (p[0] / p[3] + 1) * workspaceWidth / 2 - width / 2;
         let y = workspaceHeight - (p[1] / p[3] + 1) * workspaceHeight / 2 + 20;
 
 
