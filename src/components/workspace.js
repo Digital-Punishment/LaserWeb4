@@ -21,8 +21,6 @@ import { useImmer } from "use-immer";
 
 import '../styles/simbar.css';
 
-
-import { GlobalStore } from '..';
 import { selectDocument, toggleSelectDocument, transform2dSelectedDocuments, removeDocumentSelected, cloneDocumentSelected } from '../actions/document';
 import { setSettingsAttrs } from '../actions/settings';
 
@@ -226,233 +224,218 @@ const markerPointSize = 6;
         return result;
 };
 
-class FloatingControls extends React.Component {
+function FloatingControls({width, height, documents, documentsCache, camera, workspaceWidth, workspaceHeight, dispatch, settings}){
 
-    constructor(props) {
-        super(props)
-        this.handleDrag = this.handleDrag.bind(this)
-        this.handleStop = this.handleStop.bind(this)
+    const [linkScale, setLinkScale] = useState(true);
+    const [degrees, setDegrees] = useState(45);
+    const [drag, setDrag] = useState(settings.uiFcDrag);
 
-        this.state = {
-            linkScale: true,
-            degrees: 45,
-            drag: this.props.settings.uiFcDrag
+    const [bounds, setBounds] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
+    const [rotateCenter, setRotateCenter] = useState([0,0,0]);
+    const [hidden, setHidden] = useState(true);
+    const [showTools, setShowTools] = useState(false);
+    const [doc, setDoc] = useState(null);
+
+        const linkScaleChanged = e => {
+            setLinkScale(e.target.checked);
         }
-    }
-    UNSAFE_componentWillMount() {
-
-        this.linkScaleChanged = e => {
-            this.setState({ linkScale: e.target.checked });
-        }
-        this.scale = (sx, sy, anchor = 'C') => {
+        const scale = (sx, sy, anchor = 'C') => {
             let cx, cy
             switch (anchor) {
                 case 'TL':
-                    cx = this.bounds.x1;
-                    cy = this.bounds.y2;
+                    cx = bounds.x1;
+                    cy = bounds.y2;
                     break;
                 case 'TR':
-                    cx = this.bounds.x2;
-                    cy = this.bounds.y2;
+                    cx = bounds.x2;
+                    cy = bounds.y2;
                     break;
                 case 'BL':
-                    cx = this.bounds.x1;
-                    cy = this.bounds.y1;
+                    cx = bounds.x1;
+                    cy = bounds.y1;
                     break;
                 case 'BR':
-                    cx = this.bounds.x2;
-                    cy = this.bounds.y1;
+                    cx = bounds.x2;
+                    cy = bounds.y1;
                     break;
                 case 'C':
-                    cx = (this.bounds.x1 + this.bounds.x2) / 2;
-                    cy = (this.bounds.y1 + this.bounds.y2) / 2;
+                    cx = (bounds.x1 + bounds.x2) / 2;
+                    cy = (bounds.y1 + bounds.y2) / 2;
                     break;
             }
-            this.props.dispatch(transform2dSelectedDocuments([sx, 0, 0, sy, cx - sx * cx, cy - sy * cy]));
+            dispatch(transform2dSelectedDocuments([sx, 0, 0, sy, cx - sx * cx, cy - sy * cy]));
         }
 
-        this.setDegrees = degrees => {
-            this.setState({ degrees })
-        }
-
-        this.rotate = (e, clockwise) => {
-            let rotate = (this.state.degrees || 0) * ((clockwise) ? -1 : 1);
-            this.props.dispatch(transform2dSelectedDocuments(
+        const rotate = (e, clockwise) => {
+            let rotate = (degrees || 0) * ((clockwise) ? -1 : 1);
+            dispatch(transform2dSelectedDocuments(
                 mat2d.translate([],
                     mat2d.rotate(
                         [],
-                        mat2d.fromTranslation([], [this.rotateCenter[0], this.rotateCenter[1]]),
+                        mat2d.fromTranslation([], [rotateCenter[0], rotateCenter[1]]),
                         rotate * Math.PI / 180),
-                    [-this.rotateCenter[0], -this.rotateCenter[1]]
+                    [-rotateCenter[0], -rotateCenter[1]]
                 )
             ));
-            this.rotateDocs = GlobalStore().getState().documents;
-            this.forceUpdate();
         }
-        this.setMinX = v => {
-            this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, v - this.bounds.x1, 0]));
+        const setMinX = v => {
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, v - bounds.x1, 0]));
         }
-        this.setCenterX = v => {
-            this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, v - (this.bounds.x1 + this.bounds.x2) / 2, 0]));
+        const setCenterX = v => {
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, v - (bounds.x1 + bounds.x2) / 2, 0]));
         }
-        this.setMaxX = v => {
-            this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, v - this.bounds.x2, 0]));
+        const setMaxX = v => {
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, v - bounds.x2, 0]));
         }
-        this.setZeroX = dir => {
-            var x = -this.bounds.x1;
+        const setZeroX = dir => {
+            var x = -bounds.x1;
             if (dir)
-                x -= this.bounds.x2 - this.bounds.x1;
-            this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, x, 0]));
+                x -= bounds.x2 - bounds.x1;
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, x, 0]));
         }
-        this.setSizeX = v => {
-            if (v > 0 && this.bounds.x2 - this.bounds.x1 > 0) {
-                let s = v / (this.bounds.x2 - this.bounds.x1);
-                if (this.state.linkScale)
-                    this.scale(s, s);
+        const setSizeX = v => {
+            if (v > 0 && bounds.x2 - bounds.x1 > 0) {
+                let s = v / (bounds.x2 - bounds.x1);
+                if (linkScale)
+                    scale(s, s);
                 else
-                    this.scale(s, 1);
+                    scale(s, 1);
             }
         }
-        this.setMinY = v => {
-            this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, 0, v - this.bounds.y1]));
+        const setMinY = v => {
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, 0, v - bounds.y1]));
         }
-        this.setCenterY = v => {
-            this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, 0, v - (this.bounds.y1 + this.bounds.y2) / 2]));
+        const setCenterY = v => {
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, 0, v - (bounds.y1 + bounds.y2) / 2]));
         }
-        this.setMaxY = v => {
-            this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, 0, v - this.bounds.y2]));
+        const setMaxY = v => {
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, 0, v - bounds.y2]));
         }
-        this.setZeroY = dir => {
-            var y = -this.bounds.y1;
+        const setZeroY = dir => {
+            var y = -bounds.y1;
             if (dir)
-                y -= this.bounds.y2 - this.bounds.y1;
-            this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, 0, y]));
+                y -= bounds.y2 - bounds.y1;
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, 0, y]));
         }
-        this.setSizeY = v => {
-            if (v > 0 && this.bounds.y2 - this.bounds.y1 > 0) {
-                let s = v / (this.bounds.y2 - this.bounds.y1);
-                if (this.state.linkScale)
-                    this.scale(s, s);
+        const setSizeY = v => {
+            if (v > 0 && bounds.y2 - bounds.y1 > 0) {
+                let s = v / (bounds.y2 - bounds.y1);
+                if (linkScale)
+                    scale(s, s);
                 else
-                    this.scale(1, s);
+                    scale(1, s);
             }
         }
-        this.setCenterXY = v => {
-            let x = -this.bounds.x1;
-            let y = -this.bounds.y1;
-            let cx = (this.bounds.x2 - this.bounds.x1) / 2;
-            let cy = (this.bounds.y2 - this.bounds.y1) / 2;
-            this.props.dispatch(transform2dSelectedDocuments([1, 0, 0, 1, x - cx, y - cy]));
+        const setCenterXY = v => {
+            let x = -bounds.x1;
+            let y = -bounds.y1;
+            let cx = (bounds.x2 - bounds.x1) / 2;
+            let cy = (bounds.y2 - bounds.y1) / 2;
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, x - cx, y - cy]));
+        }
 
+        const setZeroXY = (dirX, dirY) => {
+            var x = -bounds.x1;
+            var y = -bounds.y1;
+            if (dirX)
+                x -= bounds.x2 - bounds.x1;
+            if (dirY)
+                y -= bounds.y2 - bounds.y1;
+            dispatch(transform2dSelectedDocuments([1, 0, 0, 1, x, y]));
         }
-        this.flipLeftRight = v => {
-            this.scale(-1, 1)
+        const flipLeftRight = v => {
+            scale(-1, 1)
         }
-        this.flipTopBorrom = v => {
-            this.scale(1, -1)
+        const flipTopBorrom = v => {
+            scale(1, -1)
         }
-        this.toolOptimize = (doc, scale, anchor = 'C') => {
-            if (!scale) scale = 2540 / (this.props.settings.dpiBitmap * 100);
+        const toolOptimize = (doc, scaleValue, anchor = 'C') => {
+            if (!scaleValue) scaleValue = 2540 / (settings.dpiBitmap * 100);
             if (doc.originalPixels) {
-                let targetwidth = doc.originalPixels[0] * scale;
-                let targetheight = doc.originalPixels[1] * scale;
-                let height = this.bounds.y2 - this.bounds.y1;
-                let width = this.bounds.x2 - this.bounds.x1;
-                this.scale(targetwidth / width, targetheight / height, anchor)
+                let targetwidth = doc.originalPixels[0] * scaleValue;
+                let targetheight = doc.originalPixels[1] * scaleValue;
+                let height = bounds.y2 - bounds.y1;
+                let width = bounds.x2 - bounds.x1;
+                scale(targetwidth / width, targetheight / height, anchor);
             }
         }
-    }
 
-    handleDrag(e, ui) {
-        const { x, y } = this.state.drag || { x: 0, y: 0 };
-        this.setState({
-            drag: {
+    function handleDrag(e, ui) {
+        const { x, y } = drag || { x: 0, y: 0 };
+        setDrag({
                 x: x + ui.deltaX,
                 y: y + ui.deltaY,
-            }
         });
     }
 
-    handleStop(e) {
-        this.props.dispatch(setSettingsAttrs({ uiFcDrag: this.state.drag }))
+    function handleStop(e) {
+        dispatch(setSettingsAttrs({ uiFcDrag: drag }))
     }
 
-    render() {
-        let tools;
+    useEffect(() => {
+        let tools = false;
         let found = false;
-        let bounds = this.bounds = { x1: Number.MAX_VALUE, y1: Number.MAX_VALUE, x2: -Number.MAX_VALUE, y2: -Number.MAX_VALUE };
-        for (let cache of this.props.documentCacheHolder.values()) {
-            let doc = cache.document;
-            if (doc.selected && doc.transform2d && cache.bounds) {
+        let newDoc = null;
+        let newBounds = { x1: Number.MAX_VALUE, y1: Number.MAX_VALUE, x2: -Number.MAX_VALUE, y2: -Number.MAX_VALUE };
+        for (let cache of documentsCache.values()) {
+            newDoc = cache.document;
+            if (newDoc.selected && newDoc.transform2d && cache.bounds) {
                 found = true;
-                bounds.x1 = Math.min(bounds.x1, cache.bounds.x1 + doc.transform2d[4]);
-                bounds.y1 = Math.min(bounds.y1, cache.bounds.y1 + doc.transform2d[5]);
-                bounds.x2 = Math.max(bounds.x2, cache.bounds.x2 + doc.transform2d[4]);
-                bounds.y2 = Math.max(bounds.y2, cache.bounds.y2 + doc.transform2d[5]);
+                newBounds.x1 = Math.min(newBounds.x1, cache.bounds.x1 + newDoc.transform2d[4]);
+                newBounds.y1 = Math.min(newBounds.y1, cache.bounds.y1 + newDoc.transform2d[5]);
+                newBounds.x2 = Math.max(newBounds.x2, cache.bounds.x2 + newDoc.transform2d[4]);
+                newBounds.y2 = Math.max(newBounds.y2, cache.bounds.y2 + newDoc.transform2d[5]);
 
-                if (doc.type == 'image' && doc.originalPixels) {
-                    tools = <tfoot>
-                        <tr>
-                            <td><Icon name="gear" /></td><td colSpan="7" >
-                                <ButtonGroup>
-                                    <Button bsSize="xs" bsStyle="warning" onClick={(e) => this.toolOptimize(doc, this.props.settings.machineBeamDiameter, this.props.settings.toolImagePosition)}><Icon name="picture-o" /> Raster Opt.</Button>
-                                    <Button bsSize="xs" bsStyle="danger" onClick={(e) => this.toolOptimize(doc, null, this.props.settings.toolImagePosition)}><Icon name="undo" /></Button>
-                                </ButtonGroup>
-                                &nbsp;<ImageEditorButton bsSize="xs"><Icon name="code" /> Filters/Trace</ImageEditorButton>
-                            </td>
-                        </tr>
-                    </tfoot>
-                }
+                if (newDoc.type == 'image' && newDoc.originalPixels)
+                    tools = true;
             }
         }
+            let newHidden = !found || !camera;
+            if (newHidden)
+                newBounds.x1 = newBounds.x2 = newBounds.y1 = newBounds.y2 = 0;
 
-
-        if (this.rotateDocs !== this.props.documents) {
-            this.baseRotate = 0;
-            this.rotateCenter = [(bounds.x1 + bounds.x2) / 2, (bounds.y1 + bounds.y2) / 2, 0];
-            this.rotateDocs = this.props.documents;
-        }
+            setShowTools(tools);
+            setDoc(newDoc);
+            setHidden(newHidden);
+            setBounds(newBounds);
+            setRotateCenter([(newBounds.x1 + newBounds.x2) / 2, (newBounds.y1 + newBounds.y2) / 2, 0]);
+    }, [documentsCache]);
 
         let p =
             vec4.transformMat4([],
-                vec4.transformMat4([], [bounds.x1, bounds.y1, 0, 1], this.props.camera.view),
-                this.props.camera.perspective);
-        let x = (p[0] / p[3] + 1) * this.props.workspaceWidth / 2 - 20 - this.props.width;
-        let y = this.props.workspaceHeight - (p[1] / p[3] + 1) * this.props.workspaceHeight / 2 + 20;
+                vec4.transformMat4([], [bounds.x1, bounds.y1, 0, 1], camera.view),
+                camera.perspective);
+        let x = (p[0] / p[3] + 1) * workspaceWidth / 2 - 20 - width;
+        let y = workspaceHeight - (p[1] / p[3] + 1) * workspaceHeight / 2 + 20;
 
 
 
         let round = n => Math.round(n * 100) / 100;
-        let hidden = !found || !this.props.camera;
-
-
-        if (hidden) bounds.x1 = bounds.x2 = bounds.y1 = bounds.y2 = 0
-
 
         const detach = (e, ui) => {
-            if (!this.state.drag)
-                this.setState({ drag: { x, y } });
+            if (!drag)
+                setDrag({ x, y });
         }
 
         const reattach = (e) => {
-            this.props.dispatch(setSettingsAttrs({ uiFcDrag: null }))
-            this.setState({ drag: null });
+            dispatch(setSettingsAttrs({ uiFcDrag: null }))
+            setDrag(null);
         }
 
         const constraint = (point) => {
             return {
-                x: Math.min(Math.max(point.x, 0), this.props.workspaceWidth - this.props.width),
-                y: Math.min(Math.max(point.y, 0), this.props.workspaceHeight - this.props.height)
+                x: Math.min(Math.max(point.x, 0), workspaceWidth - width),
+                y: Math.min(Math.max(point.y, 0), workspaceHeight - height),
             }
         }
 
         return (
-            <Draggable bounds="parent" position={constraint(this.state.drag ? this.state.drag : { x, y })} onStart={detach} onStop={this.handleStop} onDrag={this.handleDrag} disabled={hidden} handle=".handle">
+            <Draggable bounds="parent" position={constraint(drag ? drag : { x, y })} onStart={detach} onStop={handleStop} onDrag={handleDrag} disabled={hidden} handle=".handle">
                 <div style={{ position: "absolute", pointerEvents: hidden ? 'none' : 'all', display: hidden ? 'none' : 'block' }}>
                     <table style={{ border: '2px solid #ccc', margin: '1px', padding: '2px', backgroundColor: '#eee', }} className="floating-controls" >
                         <tbody>
                             <tr>
-                                <td title="Drag to position. DblClick to restore"><span className="handle" onDoubleClick={reattach} style={{ color: this.state.drag ? '#00F' : '#000' }}><Icon name="arrows" /></span></td>
+                                <td title="Drag to position. DblClick to restore"><span className="handle" onDoubleClick={reattach} style={{ color: drag ? '#00F' : '#000' }}><Icon name="arrows" /></span></td>
                                 <td>Min</td>
                                 <td>Center</td>
                                 <td>Max</td>
@@ -463,19 +446,19 @@ class FloatingControls extends React.Component {
                                     <table>
                                     <tbody>
                                     <tr>
-                                    <td><button className="btn btn-xs" onClick={ e => { this.setZeroX(true); this.setZeroY(false); } } title="Align northwest of origin">&#x2198;</button></td>
-                                    <td><button className="btn btn-xs" onClick={ e => this.setZeroY(false) } title="Align north of origin">&#x2193;</button></td>
-                                    <td><button className="btn btn-xs" onClick={ e => { this.setZeroX(false); this.setZeroY(false); } } title="Align northeast of origin">&#x2199;</button></td>
+                                    <td><button className="btn btn-xs" onClick={ e => setZeroXY(true, false) } title="Align northwest of origin">&#x2198;</button></td>
+                                    <td><button className="btn btn-xs" onClick={ e => setZeroY(false) } title="Align north of origin">&#x2193;</button></td>
+                                    <td><button className="btn btn-xs" onClick={ e => setZeroXY(false, false) } title="Align northeast of origin">&#x2199;</button></td>
                                     </tr>
                                     <tr>
-                                    <td><button className="btn btn-xs" onClick={ e => this.setZeroX(true) } title="Align west of origin">&#x2192;</button></td>
-                                    <td><button className="btn btn-xs" onClick={ e => this.setCenterXY() } title="Center on origin">+</button></td>
-                                    <td><button className="btn btn-xs" onClick={ e => this.setZeroX(false) } title="Align east of origin">&#x2190;</button></td>
+                                    <td><button className="btn btn-xs" onClick={ e => setZeroX(true) } title="Align west of origin">&#x2192;</button></td>
+                                    <td><button className="btn btn-xs" onClick={ e => setCenterXY() } title="Center on origin">+</button></td>
+                                    <td><button className="btn btn-xs" onClick={ e => setZeroX(false) } title="Align east of origin">&#x2190;</button></td>
                                     </tr>
                                     <tr>
-                                    <td><button className="btn btn-xs" onClick={ e => { this.setZeroX(true); this.setZeroY(true); } } title="Align southwest of origin">&#x2197;</button></td>
-                                    <td><button className="btn btn-xs" onClick={ e => this.setZeroY(true) } title="Align south of origin">&#x2191;</button></td>
-                                    <td><button className="btn btn-xs" onClick={ e => { this.setZeroX(false); this.setZeroY(true); } } title="Align southeast of origin">&#x2196;</button></td>
+                                    <td><button className="btn btn-xs" onClick={ e => setZeroXY(true, true) } title="Align southwest of origin">&#x2197;</button></td>
+                                    <td><button className="btn btn-xs" onClick={ e => setZeroY(true) } title="Align south of origin">&#x2191;</button></td>
+                                    <td><button className="btn btn-xs" onClick={ e => setZeroXY(false, true) } title="Align southeast of origin">&#x2196;</button></td>
                                     </tr>
                                     </tbody>
                                     </table>
@@ -483,40 +466,51 @@ class FloatingControls extends React.Component {
                             </tr>
                             <tr>
                                 <td><span className="label label-danger">X</span></td>
-                                <td><Input value={round(bounds.x1)} onChangeValue={this.setMinX} type="number" step="any" tabIndex="1" /></td>
-                                <td><Input value={round((bounds.x1 + bounds.x2) * .5)} onChangeValue={this.setCenterX} type="number" step="any" tabIndex="3" /></td>
-                                <td><Input value={round(bounds.x2)} type="number" onChangeValue={this.setMaxX} step="any" tabIndex="5" /></td>
-                                <td><Input value={round(bounds.x2 - bounds.x1)} type="number" onChangeValue={this.setSizeX} step="any" tabIndex="7" /></td>
+                                <td><Input value={round(bounds.x1)} onChangeValue={setMinX} type="number" step="any" tabIndex="1" /></td>
+                                <td><Input value={round((bounds.x1 + bounds.x2) * .5)} onChangeValue={setCenterX} type="number" step="any" tabIndex="3" /></td>
+                                <td><Input value={round(bounds.x2)} type="number" onChangeValue={setMaxX} step="any" tabIndex="5" /></td>
+                                <td><Input value={round(bounds.x2 - bounds.x1)} type="number" onChangeValue={setSizeX} step="any" tabIndex="7" /></td>
                                 <td rowSpan={2}>
-                                    &#x2511;<br /><input type="checkbox" checked={this.state.linkScale} onChange={this.linkScaleChanged} tabIndex="10" /><br />&#x2519;
+                                    &#x2511;<br /><input type="checkbox" checked={linkScale} onChange={linkScaleChanged} tabIndex="10" /><br />&#x2519;
                                 </td>
-                                <td rowSpan={2}><Input value={round(this.state.degrees)} onChangeValue={this.setDegrees} type="angle" step="any" tabIndex="10" />
+                                <td rowSpan={2}><Input value={round(degrees)} onChangeValue={ e => setDegrees(e) } type="angle" step="any" tabIndex="10" />
                                     <span style={{ fontSize: '120%', fontWeight: 'bold' }}>&nbsp;&deg;</span><br />
                                     <ButtonGroup>
-                                        <Button bsSize="xsmall" onClick={e => this.rotate(e, false)} bsStyle="info"><Icon fw name="rotate-left"  /></Button>
-                                        <Button bsSize="xsmall" onClick={e => this.rotate(e, true )} bsStyle="info"><Icon fw name="rotate-right" /></Button>
+                                        <Button bsSize="xsmall" onClick={e => rotate(e, false)} bsStyle="info"><Icon fw name="rotate-left"  /></Button>
+                                        <Button bsSize="xsmall" onClick={e => rotate(e, true )} bsStyle="info"><Icon fw name="rotate-right" /></Button>
                                     </ButtonGroup>
                                     <br />
                                     <ButtonGroup>
-                                        <Button bsSize="xsmall" onClick={e => this.flipTopBorrom()} bsStyle="info"><Icon fw name="arrows-v" /></Button>
-                                        <Button bsSize="xsmall" onClick={e => this.flipLeftRight()} bsStyle="info"><Icon fw name="arrows-h" /></Button>
+                                        <Button bsSize="xsmall" onClick={e => flipTopBorrom()} bsStyle="info"><Icon fw name="arrows-v" /></Button>
+                                        <Button bsSize="xsmall" onClick={e => flipLeftRight()} bsStyle="info"><Icon fw name="arrows-h" /></Button>
                                     </ButtonGroup>
                                 </td>
                             </tr>
                             <tr>
                                 <td><span className="label label-success">Y</span></td>
-                                <td><Input value={round(bounds.y1)} onChangeValue={this.setMinY} type="number" step="any" tabIndex="2" /></td>
-                                <td><Input value={round((bounds.y1 + bounds.y2) * .5)} onChangeValue={this.setCenterY} type="number" step="any" tabIndex="4" /></td>
-                                <td><Input value={round(bounds.y2)} type="number" onChangeValue={this.setMaxY} step="any" tabIndex="6" /></td>
-                                <td><Input value={round(bounds.y2 - bounds.y1)} type="number" onChangeValue={this.setSizeY} step="any" tabIndex="8" /></td>
+                                <td><Input value={round(bounds.y1)} onChangeValue={setMinY} type="number" step="any" tabIndex="2" /></td>
+                                <td><Input value={round((bounds.y1 + bounds.y2) * .5)} onChangeValue={setCenterY} type="number" step="any" tabIndex="4" /></td>
+                                <td><Input value={round(bounds.y2)} type="number" onChangeValue={setMaxY} step="any" tabIndex="6" /></td>
+                                <td><Input value={round(bounds.y2 - bounds.y1)} type="number" onChangeValue={setSizeY} step="any" tabIndex="8" /></td>
                             </tr>
                         </tbody>
-                        {tools}
+                        { showTools &&
+                            <tfoot>
+                                <tr>
+                                    <td><Icon name="gear" /></td><td colSpan="7" >
+                                        <ButtonGroup>
+                                            <Button bsSize="xs" bsStyle="warning" onClick={(e) => toolOptimize(doc, settings.machineBeamDiameter, settings.toolImagePosition)}><Icon name="picture-o" /> Raster Opt.</Button>
+                                            <Button bsSize="xs" bsStyle="danger" onClick={(e) => toolOptimize(doc, null, settings.toolImagePosition)}><Icon name="undo" /></Button>
+                                        </ButtonGroup>
+                                        &nbsp;<ImageEditorButton bsSize="xs"><Icon name="code" /> Filters/Trace</ImageEditorButton>
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        }
                     </table>
                 </div>
             </Draggable>
         );
-    }
 } // FloatingControls
 
 const thickSquare = convertOutlineToThickLines([0, 0, 1, 0, 1, 1, 0, 1, 0, 0]);
@@ -1391,7 +1385,7 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
 
                 <SetSize className="workspace-content workspace-overlay" selector=".floating-controls">
                     <FloatingControls
-                        documents={documents} documentCacheHolder={documentsCache} camera={viewCamera}
+                        documents={documents} documentsCache={documentsCache} camera={viewCamera}
                         workspaceWidth={width} workspaceHeight={height} dispatch={dispatch}
                         settings={settings}
                     />
