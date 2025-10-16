@@ -772,8 +772,23 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
     }, [dimensions, settings]);
 
     useEffect(() =>{
+        if (!workspace.initialZoom) {
+            let x = settings.machineBottomLeftX;
+            let y = settings.machineBottomLeftY;
+            if (settings.showMachine) {
+                x = 0;
+                y = 0;
+            }
+            updateWorkspace((draft) => {draft.initialZoom = true });
+            zoomArea(
+                x - 10,
+                y - 10,
+                x + settings.machineWidth + 10,
+                y + settings.machineHeight + 10
+            );
+        }
         setViewCamera(setCamera());
-    }, [dimensions, camera, settings]);
+    }, [dimensions, camera, settings, workspace]);
 
     const hotkeysOptions = {enabled: hotkeysEnabled, preventDefault: true,};
     useHotkeys(['alt+delete', 'meta+backspace'], () => removeSelected(), hotkeysOptions);
@@ -810,22 +825,6 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
                     draft.width = width;
                     draft.height = height;
                     });
-
-                if (!workspace.initialZoom) {
-                    let x = settings.machineBottomLeftX;
-                    let y = settings.machineBottomLeftY;
-                    if (settings.showMachine) {
-                        x = 0;
-                        y = 0;
-                    }
-                    updateWorkspace((draft) => {draft.inititalZoom = true });
-                    zoomArea(
-                        x - 10,
-                        y - 10,
-                        x + settings.machineWidth + 10,
-                        y + settings.machineHeight + 10
-                    );
-                }
         });
 
         if (canvasRef.current)
@@ -995,9 +994,9 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
     function drawRotary(canvas, gl, drawCommands) {
 
         let minX = Number.MAX_VALUE;
-        let maxX = Number.MIN_VALUE;
+        let maxX = -Number.MAX_VALUE;
         let minY = Number.MAX_VALUE;
-        let maxY = Number.MIN_VALUE;
+        let maxY = -Number.MAX_VALUE;
 
         if (gcodePreview.array && laserPreview.array) {
             if (workspace.showGcode || workspace.showLaser) {
@@ -1495,7 +1494,7 @@ export default function Workspace({style}){
 
     function zoomDoc() {
         let found = false;
-        let bounds = { x1: Number.MAX_VALUE, y1: Number.MAX_VALUE, x2: Number.MIN_VALUE, y2: Number.MIN_VALUE };
+        let bounds = { x1: Number.MAX_VALUE, y1: Number.MAX_VALUE, x2: -Number.MAX_VALUE, y2: -Number.MAX_VALUE };
         for (let cache of documentsCache.values()) {
             let doc = cache.document;
             if (doc.selected && doc.transform2d && cache.bounds) {

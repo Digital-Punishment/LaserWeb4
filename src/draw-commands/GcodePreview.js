@@ -101,11 +101,11 @@ export function parseGcodePreview(parsed, arrayVersion) {
         } else {
             let array = new Float32Array((parsed.length - parsedStride) / parsedStride * drawStride * 2);
             result.minX = Number.MAX_VALUE;
-            result.maxX = Number.MIN_VALUE;
+            result.maxX = -Number.MAX_VALUE;
             result.minY = Number.MAX_VALUE;
-            result.maxY = Number.MIN_VALUE;
+            result.maxY = -Number.MAX_VALUE;
             result.minA = Number.MAX_VALUE;
-            result.maxA = Number.MIN_VALUE;
+            result.maxA = -Number.MAX_VALUE;
             result.moves = 0;
 
             let g0Dist = 0, g1Time = 0;
