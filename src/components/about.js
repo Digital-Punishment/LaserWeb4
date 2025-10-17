@@ -4,8 +4,8 @@
  */
 
 // React
-import React from 'react'
-import { connect } from 'react-redux';
+import React, {useState, useEffect} from 'react'
+import { useSelector } from 'react-redux';
 import { ButtonToolbar, Button } from 'react-bootstrap'
 import Icon from './font-awesome'
 import { marked } from 'marked';
@@ -22,12 +22,13 @@ import Toggle from 'react-toggle'
  * @param {Object} props Component properties.
  */
 
- class About extends React.Component {
+export default function About() {
     /**
      * Render the component.
      * @return {String}
      */
-    render() {
+
+     const settings = useSelector((state) => state.settings); //TODO take server version from COM status instead of settings. set it to default at start and remove it from storage
 
         return (
             <div>
@@ -36,7 +37,7 @@ import Toggle from 'react-toggle'
                 <h3>LaserWeb Versions</h3>
                   <dl>
                     <dt><Icon name="cubes"/> Frontend: {version}</dt><dd></dd><p/>
-                    <dt><Icon name="usb"/> Backend: {this.props.settings.comServerVersion} (API: {this.props.settings.comApiVersion}) </dt><dd></dd><p/>
+                    <dt><Icon name="usb"/> Backend: {settings.comServerVersion} (API: {settings.comApiVersion}) </dt><dd></dd><p/>
                   </dl>
                   <Releases/>
                 <h3>Documentation</h3>
@@ -96,39 +97,15 @@ import Toggle from 'react-toggle'
 
             </div>
         )
-    }
 }
 
-About = connect(
-    state => ({ settings: state.settings, profiles: state.machineProfiles })
-)(About);
-
-// Exports
-export default About
-
-
-class Lifesaver extends React.Component
-{
-    render()
-    {
-        let button;
-        if (window.require) button = <Button bsSize="xs" bsStyle="warning" onClick={(e) => { this.props.handleDevTools(e) }}><Icon name="gear" /> Toggle Dev tools</Button>
-
-        return <ButtonToolbar>
-          {button}
-           <div className="form-group toggle-right"><Toggle defaultChecked={getDebug()} onChange={this.props.handleDebug} /><label>Enable debug logger</label></div>
-          <Button bsSize="xs" bsStyle="warning" onClick={(e) => { this.props.handleRefresh(e) }}><Icon name="refresh" /> Refresh window</Button>
-          <Button bsSize="xs" bsStyle="danger" onClick={(e) => { this.props.handleReset(e) }}><Icon name="bolt" /> Reset to factory defaults</Button>
-        </ButtonToolbar>
-    }
-}
-
-Lifesaver = connect((store)=>({}),(dispatch) =>{
-    return {
-        handleDebug:(e)=>{
+function Lifesaver() {
+//TODO move this component to settings? Why is it in About?
+        const handleDebug = (e)=>{
             setDebug(e.target.checked)
-        },
-        handleDevTools: () => {
+    }
+//TODO test in Electron
+        const handleDevTools = () => {
             if (window.require) { // Are we in Electron?
                 const electron = window.require('electron');
                 const app = electron.remote;
@@ -145,43 +122,47 @@ Lifesaver = connect((store)=>({}),(dispatch) =>{
             } else {
                 console.warn("Can't do that, pal")
             }
-        },
-        handleReset: () => {
+        }
+
+        const handleReset = () => {
             confirm("All data will be zapped!", (b) => {
               if (b) {
                 window.localStorage.removeItem(LOCALSTORAGE_KEY)
                 location.reload();
               }
             })
-        },
-        handleRefresh: () => {
+        }
+
+        const handleRefresh = () => {
             confirm("Are you sure? This will destroy unsaved work", (b) => { if (b) location.reload(); })
         }
-    }
-  }
-)(Lifesaver)
 
+        return <ButtonToolbar>
+            {(window.require) && <Button bsSize="xs" bsStyle="warning" onClick={(e) => { handleDevTools(e) }}><Icon name="gear" /> Toggle Dev tools</Button>}
+            <div className="form-group toggle-right"><Toggle defaultChecked={getDebug()} onChange={handleDebug} /><label>Enable debug logger</label></div>
+            <Button bsSize="xs" bsStyle="warning" onClick={(e) => { handleRefresh(e) }}><Icon name="refresh" /> Refresh window</Button>
+            <Button bsSize="xs" bsStyle="danger" onClick={(e) => { handleReset(e) }}><Icon name="bolt" /> Reset to factory defaults</Button>
+        </ButtonToolbar>
+}
 
+function Releases() {
 
-export class Releases extends React.Component {
+    const [releaseInfo, setReleaseInfo] = useState();
 
-    constructor(props)
-    {
-        super(props);
-        this.state={}
-    }
-
-    componentDidMount() {
+    useEffect (() => {
         fetchRelease().then((release)=>{
-            this.setState(release);
+            setReleaseInfo(release);
         })
-    }
+    }, []);
 
-    render() {
+
         return <div className="releases">
-            {this.state.tag_name ? <h4>Latest release: <a href={this.state.html_url} target="__blank">{this.state.tag_name}</a></h4>:undefined }
-            {this.state.body ? <div dangerouslySetInnerHTML={{__html: marked(this.state.body)}}/>:undefined }
+            {releaseInfo && <div>
+            {releaseInfo.tag_name ? <h4>Latest release: <a href={releaseInfo.html_url} target="__blank">{releaseInfo.tag_name}</a></h4>:undefined }
+            {releaseInfo.body ? <div dangerouslySetInnerHTML={{__html: marked(releaseInfo.body)}}/>:undefined }
+            </div>
+            }
         </div>
-    }
+
 
 }
