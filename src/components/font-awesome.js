@@ -12,7 +12,7 @@ import React from 'react'
  * @extends module:react~React~Component
  * @param {Object} props Component properties.
  */
-class Icon extends React.Component {
+export default function Icon({name, fw}) {
     /**
      * @type {Object}
      * @member module:components/font-awesome~Icon.prototype#props
@@ -24,21 +24,16 @@ class Icon extends React.Component {
      * Return the icon class name from props.
      * @return {String}
      */
-    getClassName() {
-        return 'fa fa-' + this.props.name + (this.props.fw ? ' fa-fw' : '')
+    function getClassName() {
+        return 'fa fa-' + name + (fw ? ' fa-fw' : '')
     }
 
     /**
      * Render the component.
      * @return {String}
      */
-    render() {
+
         return (
-            this.props.name ? <i className={ this.getClassName() }></i> : null
+            name ? <i className={ getClassName() }></i> : null
         )
-    }
 }
-
-
-// Exports
-export default Icon
