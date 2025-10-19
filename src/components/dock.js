@@ -15,6 +15,8 @@ import * as actions from '../actions/panes'
 
 import { SettingsValidator } from './settings';
 import { CAMValidator } from './cam';
+
+import { useHotkeys } from 'react-hotkeys-hook';
 /**
  * Dock item component.
  *
@@ -81,7 +83,7 @@ export default function Dock({children}) {
         return (
             <ul className="dock full-height">
                 {
-                    children.map(item => {
+                    children.map((item, i) => {
 
                         let validation;
                         if (item.props.id=='settings') validation=<SettingsValidator className="notification" noneOnSuccess />;
@@ -93,9 +95,17 @@ export default function Dock({children}) {
                             active={item.props.id === selected}
                             dimmed={dimmed}
                             onClick={() => onButtonClick(item.props.id)}
-                            >{validation}</Button>
+                            >
+                                <PaneHotKeys keybinding={"ctrl+"+(i+1)} onTrigger={() => onButtonClick(item.props.id)} />
+                                {validation}
+                            </Button>
                     })
                 }
             </ul>
         )
+}
+
+function PaneHotKeys({keybinding, onTrigger}) {
+    useHotkeys(keybinding, () => onTrigger(), {preventDefault: true});
+    return null;
 }
