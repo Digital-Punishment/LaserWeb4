@@ -5,7 +5,7 @@
 
 // React/Redux
 import React from 'react'
-import { connect } from 'react-redux'
+import { useSelector, useDispatch } from 'react-redux'
 
 // Font awesome
 import Icon from './font-awesome'
@@ -21,7 +21,7 @@ import { CAMValidator } from './cam';
  * @extends module:react~React~Component
  * @param {Object} props Component properties.
  */
-class Button extends React.Component {
+export function Button({active, dimmed, onClick, title, icon, children}) {
     /**
      * @type {Object}
      * @member module:components/dock~Button.prototype#props
@@ -36,20 +36,18 @@ class Button extends React.Component {
      * Render the component.
      * @return {String}
      */
-    render() {
         let styleClasses=[];
-        if (this.props.active) styleClasses.push('active');
-        if (this.props.dimmed) styleClasses.push('dimmed');
+        if (active) styleClasses.push('active');
+        if (dimmed) styleClasses.push('dimmed');
         return (
-            <li className={ styleClasses.length ? styleClasses.join(" ") : null  } onClick={ this.props.onClick } >
+            <li className={ styleClasses.length ? styleClasses.join(" ") : null  } onClick={ onClick } >
                 <div style={{position:'relative'}}>
-                    <Icon name={ this.props.icon } fw={ true } />
-                    <span>{ this.props.title }</span>
-                    {this.props.children}
+                    <Icon name={ icon } fw={ true } />
+                    <span>{ title }</span>
+                    {children}
                 </div>
             </li>
         )
-    }
 }
 
 /**
@@ -59,7 +57,7 @@ class Button extends React.Component {
  * @extends module:react~React~Component
  * @param {Object} props Component properties.
  */
-class Dock extends React.Component {
+export default function Dock({children}) {
     /**
      * @type {Object}
      * @member module:components/dock~Dock.prototype#props
@@ -67,15 +65,23 @@ class Dock extends React.Component {
      * @property {module:components/dock~onButtonClick} onClick Called on dock item click.
      */
 
+//TODO add hotkeys to switch panes
+     const dispatch = useDispatch();
+     const selected = useSelector((state) => state.panes.selected);
+     const dimmed = !useSelector((state) => state.panes.visible);
+
+     const onButtonClick = (id) => {
+         dispatch(actions.selectPane(id))
+     }
+
     /**
      * Render the component.
      * @return {String}
      */
-    render() {
         return (
             <ul className="dock full-height">
                 {
-                    React.Children.map(this.props.children, item => {
+                    children.map(item => {
 
                         let validation;
                         if (item.props.id=='settings') validation=<SettingsValidator className="notification" noneOnSuccess />;
@@ -84,38 +90,12 @@ class Dock extends React.Component {
                         return <Button
                             {...item.props}
                             key={item.props.id}
-                            active={item.props.id === this.props.selected}
-                            dimmed={this.props.dimmed}
-                            onClick={() => this.props.onButtonClick(item.props.id)}
+                            active={item.props.id === selected}
+                            dimmed={dimmed}
+                            onClick={() => onButtonClick(item.props.id)}
                             >{validation}</Button>
                     })
                 }
             </ul>
         )
-    }
 }
-
-const mapStateToProps = (state) => {
-    return {
-        selected: state.panes.selected,
-        dimmed: !state.panes.visible,
-    }
-}
-
-const mapDispatchToProps = (dispatch) => {
-    return {
-        /**
-         * Called on dock item click.
-         * - Select and set item ative.
-         * @typedef {Function} module:components/dock~onButtonClick
-         * @param {Integer} id Clicked item id.
-         */
-        onButtonClick: (id) => {
-            dispatch(actions.selectPane(id))
-        }
-    }
-}
-
-// Exports
-export { Dock, Button }
-export default connect(mapStateToProps, mapDispatchToProps)(Dock)

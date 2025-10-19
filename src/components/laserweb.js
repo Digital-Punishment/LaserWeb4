@@ -16,8 +16,8 @@ import 'bootstrap-range-input/dist/css/bootstrap-range-input.min.css'
 import ReactDOM from 'react-dom'
 
 // React/Redux
-import React from 'react'
-import { connect } from 'react-redux'
+import React, { useState, useEffect } from 'react'
+import { useSelector, useDispatch } from 'react-redux'
 
 // Main components
 import Sidebar from './sidebar'
@@ -36,11 +36,9 @@ import { DocumentCacheHolder } from './document-cache'
 
 import { keyboardUndoAction } from '../actions/laserweb';
 
-import { keyboardLogger, bindKeys, unbindKeys } from './keyboard';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 import { fireMacroById } from '../actions/macros'
-
-import { GlobalStore } from '../index'
 
 import { VideoCapture } from '../lib/video-capture'
 import { fetchRelease } from '../lib/releases'
@@ -97,17 +95,30 @@ const updateTitle=()=>{
     document.title = `Laserweb ${version}`;
 }
 
-class LaserWeb extends React.Component {
+export default function LaserWeb() {
 
-    UNSAFE_componentWillReceiveProps(nextProps) {
+    const dispatch = useDispatch();
+    const macros = useSelector((state) => state.settings.macros);
+    const documents = useSelector((state) => state.documents);
+    const settings = useSelector((state) => state.settings);
+
+    const [glOk, setGlOk] = useState(false);
+
+    const handleMacro = (evt, key, macros) => {
+        let macroAction = fireMacroById(key, macros)
+        if (macroAction) {
+            evt.preventDefault();
+            dispatch(macroAction)
+        }
+    }
+
+    const handleVideoStream = (deviceId, props) => {
+        if (props === false) dispatch({ type: "SETTINGS_SET_ATTRS", payload: { attrs: { toolVideoDevice: null } } })
+    }
+
+    useEffect(() => {
         updateTitle();
-    }
 
-    shouldComponentUpdate(nextProps, nextState) {
-        return nextProps.documents !== this.props.documents;
-    }
-
-    UNSAFE_componentWillMount() {
         try {
             let canvas = document.createElement('canvas');
             let gl = canvas.getContext('webgl', { alpha: true, depth: true, antialias: true, preserveDrawingBuffer: true });
@@ -115,64 +126,64 @@ class LaserWeb extends React.Component {
                 throw "canvas.getContext('webgl', {...}) returned " + gl;
             let drawCommands = new DrawCommands(gl);
             drawCommands.destroy();
-            this.glOk = true;
+            setGlOk(true);
         } catch (e) {
             console.error(e);
             return;
         }
-    }
+    }, []);
 
-    componentDidMount() {
+    useEffect(() => {
         updateTitle();
-        if (this.glOk) {
-            this.setupKeybindings();
-            this.setupVideoCapture();
+        if (glOk) {
+            setupKeybindings();
+            setupVideoCapture();
         }
         fetchRelease().then(function(data){
-            if (this.props.settings.__latestRelease) {
-                if (Math.abs(new Date(data.created_at).getTime() - new Date(this.props.settings.__latestRelease).getTime()))
+            if (settings.__latestRelease) {
+                if (Math.abs(new Date(data.created_at).getTime() - new Date(settings.__latestRelease).getTime()))
                 {
                     alert(`New release (<a href="${data.html_url}" target="__blank">${data.tag_name}</a>) available`);
                 }
             }
-            this.props.dispatch(setSettingsAttrs({__latestRelease: data.created_at}))
-        }.bind(this))
+            if (settings.__latestRelease !== data.created_at)
+                dispatch(setSettingsAttrs({__latestRelease: data.created_at}))
+        })
+        }, [glOk]);
+
+    const hotkeysOptions = {enabled: glOk, preventDefault: true};
+    useHotkeys(['command + z', 'control+z'], () => dispatch(keyboardUndoAction()), hotkeysOptions);
+
+    function setupKeybindings(){
+        return
+        //TODO restore macros hotkeys
+            // Object.entries(this.props.macros).filter(entry=>{
+            //         let [label, macro] = entry;
+            //         return macro.keybinding && macro.keybinding.length
+            //     }).map(entry=>{
+            //         let [label, macro] = entry;
+            //         return macro.keybinding
+            //     }).forEach((key)=>{
+            //         keyboardLogger.bind(key, function (e) { this.props.handleMacro(e, key, this.props.macros) }.bind(this))
+            //     });
     }
 
-    setupKeybindings(){
-            keyboardLogger.bind(['command + z', 'ctrl + z'], function (e) {
-                this.props.handleUndo(e);
-            }.bind(this));
-
-            Object.entries(this.props.macros).filter(entry=>{
-                    let [label, macro] = entry;
-                    return macro.keybinding && macro.keybinding.length
-                }).map(entry=>{
-                    let [label, macro] = entry;
-                    return macro.keybinding
-                }).forEach((key)=>{
-                    keyboardLogger.bind(key, function (e) { this.props.handleMacro(e, key, this.props.macros) }.bind(this))
-                });
-    }
-
-    setupVideoCapture()
+    function setupVideoCapture()
     {
         if (!window.videoCapture) {
             const onNextFrame = (callback) => { setTimeout(() => { window.requestAnimationFrame(callback) }, 0) }
             onNextFrame(() => {
                 window.videoCapture = new VideoCapture()
-                window.videoCapture.scan(this.props.settings.toolVideoDevice, this.props.settings.toolVideoResolution, (obj) => { this.props.handleVideoStream(this.props.settings.toolVideoDevice, obj) })
+                window.videoCapture.scan(settings.toolVideoDevice, settings.toolVideoResolution, (obj) => { handleVideoStream(settings.toolVideoDevice, obj) })
             })
         }
     }
 
-
-    render() {
         // 2017-01-21 Pvdw - removed the following from Dock
         // <Gcode id="gcode" title="G-Code" icon="file-code-o" />
         // <Quote id="quote" title="Quote" icon="money" />
 
-        if (!this.glOk) {
+        if (!glOk) {
             return (
                 <h1>OpenGL won't start. This app can't run without it.</h1>
             );
@@ -180,9 +191,9 @@ class LaserWeb extends React.Component {
 
         return (
             <AllowCapture style={{ height: '100%' }}>
-                <DocumentCacheHolder style={{ width: '100%' }} documents={this.props.documents}>
+                <DocumentCacheHolder style={{ width: '100%' }} documents={documents}>
                     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%' }}>
-                        <Sidebar ref="sidebar" style={{ flexGrow: 0, flexShrink: 0 }}>
+                        <Sidebar style={{ flexGrow: 0, flexShrink: 0 }}>
                             <Cam id="cam" title="Files" icon="pencil-square-o" />
                             <Com id="com" title="Comms" icon="plug" />
                             <Jog id="jog" title="Control" icon="arrows-alt" />
@@ -194,39 +205,4 @@ class LaserWeb extends React.Component {
                 </DocumentCacheHolder>
             </AllowCapture>
         )
-    }
 }
-
-const mapStateToProps = (state) => {
-    return {
-        macros: state.settings.macros,
-        visible: state.panes.visible,
-        documents: state.documents,
-        settings: state.settings,
-    }
-}
-
-const mapDispatchToProps = (dispatch) => {
-    return {
-        dispatch,
-        handleUndo: evt => {
-            evt.preventDefault();
-            dispatch(keyboardUndoAction(evt))
-        },
-        handleMacro: (evt, key, macros) => {
-            let macroAction = fireMacroById(key, macros)
-            if (macroAction) {
-                evt.preventDefault();
-                dispatch(macroAction)
-            }
-        },
-        handleVideoStream: (deviceId, props) => {
-            if (props === false) dispatch({ type: "SETTINGS_SET_ATTRS", payload: { attrs: { toolVideoDevice: null } } })
-        }
-
-    }
-}
-
-// Exports
-export { LaserWeb }
-export default connect(mapStateToProps, mapDispatchToProps)(LaserWeb)

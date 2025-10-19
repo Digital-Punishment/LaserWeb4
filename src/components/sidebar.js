@@ -6,15 +6,12 @@
 
 // React/Redux
 import React from 'react'
-import { connect } from 'react-redux'
+import { useSelector } from 'react-redux'
 
 // Main components
 import Dock from './dock'
 import Panes from './panes'
 import Splitter from './splitter';
-
-// Actions
-import * as panesActions from '../actions/panes'
 
 /**
  * Sidebar component.
@@ -23,27 +20,19 @@ import * as panesActions from '../actions/panes'
  * @extends module:react~React~Component
  * @param {Object} props Component properties.
  */
-class Sidebar extends React.Component {
-    shouldComponentUpdate(nextProps, nextState) {
-        return nextProps.visible !== this.props.visible;
-    }
+export default function Sidebar ({style, children}) {
 
-    render() {
+    const visible = useSelector((state) => state.panes.visible);
+
         return (
-            <div id="sidebar" className={"full-height"} style={this.props.style} >
-                <Dock>{this.props.children}</Dock>
+            <div id="sidebar" className={"full-height"} style={style} >
+                <Dock>{children}</Dock>
                 <Splitter
                     split="vertical" initialSize={300} minSize={300} splitterId="sidebar" resizerStyle={{ marginLeft: 2, marginRight: 2 }}
-                    style={{ width: this.props.visible ? "inherit" : 0 }}
+                    style={{ width: visible ? "inherit" : 0 }}
                     >
-                    <Panes ref="panes">{this.props.children}</Panes>
+                    <Panes>{children}</Panes>
                 </Splitter>
             </div>
         )
-    }
 }
-Sidebar = connect(
-    state => ({ visible: state.panes.visible })
-)(Sidebar);
-
-export default Sidebar

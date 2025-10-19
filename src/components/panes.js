@@ -6,7 +6,7 @@
 
 // React/Redux
 import React from 'react'
-import { connect } from 'react-redux'
+import { useSelector } from 'react-redux'
 
 /**
  * Pane component.
@@ -14,7 +14,7 @@ import { connect } from 'react-redux'
  * @extends module:react~React~Component
  * @param {Object} props Component properties.
  */
-class Pane extends React.Component {
+export function Pane({active, id, children}) {
     /**
      * @type {Object}
      * @member module:components/pane~Pane.prototype#props
@@ -29,13 +29,11 @@ class Pane extends React.Component {
      * Render the component.
      * @return {String}
      */
-    render() {
         return (
-            <div className={ "pane" + (this.props.active ? " active" : "") + " pane-"+this.props.id}>
-                <div className="pane-content">{ this.props.children }</div>
+            <div className={ "pane" + (active ? " active" : "") + " pane-"+id}>
+                <div className="pane-content">{ children }</div>
             </div>
         )
-    }
 }
 
 /**
@@ -45,42 +43,25 @@ class Pane extends React.Component {
  * @extends module:react~React~Component
  * @param {Object} props Component properties.
  */
-class Panes extends React.Component {
-    shouldComponentUpdate(nextProps, nextState) {
-        return nextProps.selected !== this.props.selected || nextProps.style.width !== this.props.style.width;
-    }
+export default function Panes({style, children}) {
 
-    render() {
+    const selected = useSelector((state) => state.panes.selected);
+
         return (
-            <div className={"panes full-height"} style={this.props.style}>
+            <div className={"panes full-height"} style={style}>
                 {
-                    this.props.children
-                        .filter(item => item.props.id === this.props.selected)
+                    children
+                        .filter(item => item.props.id === selected)
                         .map(item => (
                             <Pane
                                 {...item.props}
                                 key={item.props.id}
                                 id={item.props.id}
-                                active={item.props.id === this.props.selected}
+                                active={item.props.id === selected}
                                 >
                                 {item}
                             </Pane>))
                 }
             </div>
         )
-    }
 }
-
-const mapStateToProps = (state) => {
-    return {
-        selected: state.panes.selected,
-    }
-}
-
-const mapDispatchToProps = (dispatch) => {
-    return {}
-}
-
-// Exports
-export { Panes, Pane }
-export default connect(mapStateToProps, mapDispatchToProps)(Panes)
