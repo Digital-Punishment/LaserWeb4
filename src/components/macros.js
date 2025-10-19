@@ -15,6 +15,8 @@ import Validator from 'validatorjs';
 import { MACRO_VALIDATION_RULES } from '../reducers/macros'
 import { v4 as uuidv4 } from 'uuid';
 
+import { useHotkeys } from 'react-hotkeys-hook';
+
 export function Macros({}) {
 
         const labelRef = useRef(null);
@@ -106,6 +108,9 @@ export function Macros({}) {
 export function MacrosBar() {
 
     const macros = useSelector((state) => state.settings.macros);
+    const mode = useSelector((state) => state.panes.selected);
+
+    const hotKeyOptions = {enabled: (mode === 'jog'), preventDefault: true};
 
     function handleRunMacro(id, macros) {
         let { label, gcode, keybinding } = macros[id];
@@ -117,10 +122,20 @@ export function MacrosBar() {
             <ButtonToolbar>
                 {Object.entries(macros).map((macro, i) => {
                     let [id, data] = macro;
-                    return <Button key={i} bsSize="small" onClick={(e) => handleRunMacro(id, macros)} title={"[" + data.keybinding + "]"}>{data.label}</Button>
+                    return(
+                        <Button key={i} bsSize="small" onClick={(e) => handleRunMacro(id, macros)} title={"[" + data.keybinding + "]"}>
+                            <MacrosHotKeys keybinding={data.keybinding} onTrigger={(e) => handleRunMacro(id, macros)} options={hotKeyOptions} />
+                            {data.label}
+                        </Button>
+                    )
                 })
                 }
             </ButtonToolbar>
 
         )
+}
+
+function MacrosHotKeys({keybinding, onTrigger, options}) {
+    useHotkeys(keybinding, () => onTrigger(), options);
+    return null;
 }

@@ -38,8 +38,6 @@ import { keyboardUndoAction } from '../actions/laserweb';
 
 import { useHotkeys } from 'react-hotkeys-hook';
 
-import { fireMacroById } from '../actions/macros'
-
 import { VideoCapture } from '../lib/video-capture'
 import { fetchRelease } from '../lib/releases'
 
@@ -104,14 +102,6 @@ export default function LaserWeb() {
 
     const [glOk, setGlOk] = useState(false);
 
-    const handleMacro = (evt, key, macros) => {
-        let macroAction = fireMacroById(key, macros)
-        if (macroAction) {
-            evt.preventDefault();
-            dispatch(macroAction)
-        }
-    }
-
     const handleVideoStream = (deviceId, props) => {
         if (props === false) dispatch({ type: "SETTINGS_SET_ATTRS", payload: { attrs: { toolVideoDevice: null } } })
     }
@@ -136,7 +126,7 @@ export default function LaserWeb() {
     useEffect(() => {
         updateTitle();
         if (glOk) {
-            setupKeybindings();
+            // setupKeybindings();
             setupVideoCapture();
         }
         fetchRelease().then(function(data){
@@ -153,20 +143,6 @@ export default function LaserWeb() {
 
     const hotkeysOptions = {enabled: glOk, preventDefault: true};
     useHotkeys(['command + z', 'control+z'], () => dispatch(keyboardUndoAction()), hotkeysOptions);
-
-    function setupKeybindings(){
-        return
-        //TODO restore macros hotkeys
-            // Object.entries(this.props.macros).filter(entry=>{
-            //         let [label, macro] = entry;
-            //         return macro.keybinding && macro.keybinding.length
-            //     }).map(entry=>{
-            //         let [label, macro] = entry;
-            //         return macro.keybinding
-            //     }).forEach((key)=>{
-            //         keyboardLogger.bind(key, function (e) { this.props.handleMacro(e, key, this.props.macros) }.bind(this))
-            //     });
-    }
 
     function setupVideoCapture()
     {
