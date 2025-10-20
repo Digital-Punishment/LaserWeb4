@@ -13,83 +13,70 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import React from 'react';
-import { connect } from 'react-redux'
+import React, { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux'
 
 import Capture from './capture';
 import { splitterSetSize } from '../actions/splitters'
 
-class Splitter extends React.Component {
-    UNSAFE_componentWillMount() {
-        this.mouseDown = this.mouseDown.bind(this);
-        this.touchStart = this.touchStart.bind(this);
-        this.mouseMove = this.mouseMove.bind(this);
-        this.touchMove = this.touchMove.bind(this);
-        this.touchEnd = this.touchEnd.bind(this);
+export default function Splitter({ style, split, splitterId, initialSize, minSize, resizerStyle, className, children }) {
+
+    const dispatch = useDispatch();
+    const splitters = useSelector((state) => state.splitters);
+
+    const [mouse, setMouse] = useState({x: 0, y: 0});
+    const [touching, setTouching] = useState(false);
+
+    useEffect(() => {
+        if (splitters[splitterId] === undefined)
+            dispatch(splitterSetSize(splitterId, initialSize));
+        if (minSize && splitters[splitterId] < minSize)
+            dispatch(splitterSetSize(splitterId, minSize));
+    }, [initialSize, minSize])
+
+    function mouseDown(e) {
+        setMouse({x: e.clientX, y: e.clientY});
     }
 
-    mouseDown(e) {
-        this.mouseX = e.clientX;
-        this.mouseY = e.clientY;
-    }
-
-    touchStart(e) {
+    function touchStart(e) {
         e.preventDefault();
-        this.touching = true;
+        setTouching(true);
         let touch = e.changedTouches[0];
-        this.mouseX = touch.clientX;
-        this.mouseY = touch.clientY;
+        setMouse({x: touch.clientX, y: touch.clientY});
     }
 
-    move(clientX, clientY) {
-        let delta = this.props.split === 'horizontal' ? clientY - this.mouseY : clientX - this.mouseX;
-        this.mouseX = clientX;
-        this.mouseY = clientY;
-        this.props.dispatch(splitterSetSize(this.props.splitterId, this.size + delta));
-        this.forceUpdate();
+    function move(clientX, clientY) {
+        let delta = split === 'horizontal' ? clientY - mouse.y : clientX - mouse.x;
+        setMouse({x: clientX, y: clientY});
+        let newSize = splitters[splitterId] + delta;
+        if (!minSize || (minSize && newSize >= minSize))
+            dispatch(splitterSetSize(splitterId, newSize));
     }
 
-    mouseMove(e) {
-        this.move(e.clientX, e.clientY);
+    function mouseMove(e) {
+        move(e.clientX, e.clientY);
     }
 
-    touchMove(e) {
+    function touchMove(e) {
         e.preventDefault();
         let touch = e.changedTouches[0];
-        if (this.touching)
-            this.move(touch.clientX, touch.clientY);
+        if (touching)
+            move(touch.clientX, touch.clientY);
     }
 
-    touchEnd(e) {
-        this.touching = false;
+    function touchEnd(e) {
+        setTouching(false);
     }
 
-    render() {
-        this.size = this.props.splitters[this.props.splitterId];
-        if (this.size === undefined)
-            this.size = this.props.initialSize;
-        if (this.props.minSize && this.size<this.props.minSize)
-            this.size = this.props.minSize
         return (
-            <div style={{ ...this.props.style, display: 'flex', flexDirection: this.props.split === 'horizontal' ? 'column' : 'row' }} className={this.props.className}>
-                {React.cloneElement(
-                    this.props.children,
-                    {
-                        style: {
-                            ...this.props.children.props.style,
-                            [this.props.split === 'horizontal' ? 'height' : 'width']: this.size,
-                        }
-                    }
-                )}
-                <Capture onMouseDown={this.mouseDown} onTouchStart={this.touchStart} onMouseMove={this.mouseMove} onTouchMove={this.touchMove}
-                    onTouchEnd={this.touchEnd} onTouchCancel={this.touchEnd}>
-                    <div className={'Resizer ' + this.props.split} style={this.props.resizerStyle} />
+            <div style={{ ...style, display: 'flex', flexDirection: split === 'horizontal' ? 'column' : 'row' }} className={className}>
+                <div style={ split === 'horizontal' ? {height: splitters[splitterId] } : {width: splitters[splitterId]} }>
+                    {children}
+                </div>
+                <Capture onMouseDown={mouseDown} onTouchStart={touchStart} onMouseMove={mouseMove} onTouchMove={touchMove}
+                    onTouchEnd={touchEnd} onTouchCancel={touchEnd}>
+                    <div className={'Resizer ' + split} style={resizerStyle} />
                 </Capture>
             </div >
         );
-    }
 }
-
-export default connect(
-    state => ({ splitters: state.splitters }),
-)(Splitter);
