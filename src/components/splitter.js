@@ -13,10 +13,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux'
 
-import Capture from './capture';
 import { splitterSetSize } from '../actions/splitters'
 
 export default function Splitter({ style, split, splitterId, initialSize, minSize, resizerStyle, className, children }) {
@@ -27,56 +26,88 @@ export default function Splitter({ style, split, splitterId, initialSize, minSiz
     const [mouse, setMouse] = useState({x: 0, y: 0});
     const [touching, setTouching] = useState(false);
 
+    const currentSize = useRef(splitters[splitterId]);
+    const currentMouse = useRef(mouse);
+    const currentTouch = useRef(touching);
+
     useEffect(() => {
         if (splitters[splitterId] === undefined)
             dispatch(splitterSetSize(splitterId, initialSize));
         if (minSize && splitters[splitterId] < minSize)
             dispatch(splitterSetSize(splitterId, minSize));
-    }, [initialSize, minSize])
+    }, [initialSize, minSize, splitters]);
+
+    useEffect(() => {
+        currentMouse.current = mouse;
+    }, [mouse]);
+
+    useEffect(() => {
+        currentSize.current = splitters[splitterId];
+    }, [splitters]);
+
+    useEffect(() => {
+        currentTouch.current = touching;
+    }, [touching]);
 
     function mouseDown(e) {
+        e.preventDefault();
+        document.addEventListener('mouseup', mouseUp);
+        document.addEventListener('mouseleave', mouseUp);
+        document.addEventListener('mousemove', mouseMove);
         setMouse({x: e.clientX, y: e.clientY});
     }
 
     function touchStart(e) {
         e.preventDefault();
+        document.addEventListener('touchend', touchEnd);
+        document.addEventListener('touchcancel', touchEnd);
+        document.addEventListener('touchmove', touchMove);
         setTouching(true);
         let touch = e.changedTouches[0];
         setMouse({x: touch.clientX, y: touch.clientY});
     }
 
     function move(clientX, clientY) {
-        let delta = split === 'horizontal' ? clientY - mouse.y : clientX - mouse.x;
+        let delta = split === 'horizontal' ? clientY - currentMouse.current.y : clientX - currentMouse.current.x;
         setMouse({x: clientX, y: clientY});
-        let newSize = splitters[splitterId] + delta;
+        let newSize = currentSize.current + delta;
         if (!minSize || (minSize && newSize >= minSize))
             dispatch(splitterSetSize(splitterId, newSize));
     }
 
     function mouseMove(e) {
+        e.preventDefault();
         move(e.clientX, e.clientY);
     }
 
     function touchMove(e) {
         e.preventDefault();
         let touch = e.changedTouches[0];
-        if (touching)
+        if (currentTouch.current)
             move(touch.clientX, touch.clientY);
     }
 
+    function mouseUp(e) {
+        e.preventDefault();
+        document.removeEventListener('mouseup', mouseUp);
+        document.removeEventListener('mouseleave', mouseUp);
+        document.removeEventListener('mousemove', mouseMove);
+    }
+
     function touchEnd(e) {
+        e.preventDefault();
         setTouching(false);
+        document.removeEventListener('touchend', touchEnd);
+        document.removeEventListener('touchcancel', touchEnd);
+        document.removeEventListener('touchmove', touchMove);
     }
 
         return (
             <div style={{ ...style, display: 'flex', flexDirection: split === 'horizontal' ? 'column' : 'row' }} className={className}>
-                <div style={ split === 'horizontal' ? {height: splitters[splitterId] } : {width: splitters[splitterId]} }>
+                <div style={ split === 'horizontal' ? {height: splitters[splitterId]} : {width: splitters[splitterId]} }>
                     {children}
                 </div>
-                <Capture onMouseDown={mouseDown} onTouchStart={touchStart} onMouseMove={mouseMove} onTouchMove={touchMove}
-                    onTouchEnd={touchEnd} onTouchCancel={touchEnd}>
-                    <div className={'Resizer ' + split} style={resizerStyle} />
-                </Capture>
+                <div className={'Resizer ' + split} style={resizerStyle} onMouseDown={mouseDown} onTouchStart={touchStart} />
             </div >
         );
 }

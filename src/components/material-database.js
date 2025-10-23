@@ -29,7 +29,6 @@ import omit from 'object.omit';
 
 import { cast } from '../lib/helpers'
 
-import { AllowCapture } from './capture'
 import Splitter from './splitter'
 
 import { alert, prompt, confirm } from './laserweb';
@@ -163,7 +162,7 @@ class MaterialDatabaseEditor extends React.Component {
             >
                 <MaterialMachineProfile profiles={this.props.profiles} selected={this.state.selected} onChange={(value) => { this.handleProfileSelect(value) }} />
 
-                <AllowCapture className="paneSizer" >
+                <div className="paneSizer" >
                     <div className="paneContainer" style={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <GroupsPane style={{ flexGrow: 0, flexShrink: 0, position: 'relative' }}
                             onMaterialSelected={(id) => this.handleSelectGroup(id)}
@@ -182,7 +181,7 @@ class MaterialDatabaseEditor extends React.Component {
                             onGroupTemplateClone={(fromId, toId) => this.handleGroupTemplateClone(fromId, toId)}
                         />
                     </div>
-                </AllowCapture>
+                </div>
 
             </MaterialModal>
         )

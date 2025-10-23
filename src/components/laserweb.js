@@ -31,7 +31,6 @@ import Quote from './quote'
 import Settings from './settings'
 import About from './about'
 
-import { AllowCapture } from './capture'
 import { DocumentCacheHolder } from './document-cache'
 
 import { keyboardUndoAction } from '../actions/laserweb';
@@ -166,7 +165,7 @@ export default function LaserWeb() {
         }
 
         return (
-            <AllowCapture style={{ height: '100%' }}>
+            <div style={{ height: '100%' }}>
                 <DocumentCacheHolder style={{ width: '100%' }} documents={documents}>
                     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%' }}>
                         <Sidebar style={{ flexGrow: 0, flexShrink: 0 }}>
@@ -179,6 +178,6 @@ export default function LaserWeb() {
                         <Workspace style={{ flexGrow: 1, position: "relative" }} />
                     </div>
                 </DocumentCacheHolder>
-            </AllowCapture>
+            </div>
         )
 }
