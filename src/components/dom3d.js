@@ -18,7 +18,7 @@
 //      Based on http://www.emagix.net/academic/mscs-project/item/camera-sync-with-css3-and-webgl-threejs
 
 import { mat4 } from 'gl-matrix';
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 
 function epsilon(value) {
     return Math.abs(value) < Number.EPSILON ? 0 : value;
@@ -48,67 +48,63 @@ function getCameraCSSMatrix(matrix) {
         ')';
 };
 
-export class Dom3d extends React.Component {
-    UNSAFE_componentWillUpdate(nextProps) {
-        if (!nextProps.camera)
-            return;
-        let camera = nextProps.camera;
-        if (camera.fovy) {
-            this.fov = 0.5 * nextProps.height / Math.tan(camera.fovy * 0.5);
-            this.transform = "translate3d(0,0," + this.fov + "px)" + getCameraCSSMatrix(camera.view) +
-                " translate3d(" + nextProps.width / 2 + "px," + nextProps.height / 2 + "px, 0)";
-        } else {
-            this.transform = "scale(" + nextProps.width / 2 + "," + nextProps.height / 2 + ") " + getCameraCSSMatrix(camera.view) +
-                " translate3d(" + nextProps.width / 2 + "px," + nextProps.height / 2 + "px, 0)";
-            this.fov = 'none';
-        }
-    }
+export function Dom3d({className, camera, width, height, children}) {
 
-    render() {
+    const [fov, setFOV] = useState();
+    const [transform, setTransform] = useState();
+
+    useEffect(() => {
+        if (!camera)
+            return;
+        let newFOV;
+        let newTransform;
+        if (camera.fovy) {
+            newFOV = 0.5 * height / Math.tan(camera.fovy * 0.5);
+            newTransform = "translate3d(0,0," + newFOV + "px)" + getCameraCSSMatrix(camera.view) +
+                " translate3d(" + width / 2 + "px," + height / 2 + "px, 0)";
+        } else {
+            newTransform = "scale(" + width / 2 + "," + height / 2 + ") " + getCameraCSSMatrix(camera.view) +
+                " translate3d(" + width / 2 + "px," + height / 2 + "px, 0)";
+            newFOV = 'none';
+        }
+        setFOV(newFOV);
+        setTransform(newTransform);
+    }, [camera, width, height]);
+
         return (
-            <div className={this.props.className} style={{
+            <div className={className} style={{
                 overflow: 'hidden',
                 transformStyle: 'preserve-3d',
-                perspective: this.fov
+                perspective: fov
             }}>
                 <div style={{
                     position: 'absolute',
-                    width: this.props.width,
-                    height: this.props.height,
+                    width: width,
+                    height: height,
                     transformStyle: 'preserve-3d',
-                    transform: this.transform,
+                    transform: transform,
                 }}>
-                    {this.props.children}
+                    {children}
                 </div>
             </div >
         );
-    }
 }
 
-export class Text3d extends React.Component {
-    shouldComponentUpdate(nextProps, nextState) {
-        return (
-            nextProps.x !== this.props.x ||
-            nextProps.y !== this.props.y ||
-            nextProps.size !== this.props.size ||
-            nextProps.label !== this.props.label
-        );
-    }
+export function Text3d({x, y, size, style, label, children}) {
 
-    render() {
         return (
             <div style={{
                 position: 'absolute',
-                transform: 'translate3d(' + this.props.x + 'px,' + this.props.y + 'px,0) translate3d(-50%,-50%,0) scale(.1,-.1)',
+                transform: 'translate3d(' + x + 'px,' + y + 'px,0) translate3d(-50%,-50%,0) scale(.1,-.1)',
             }}>
-                <div style={Object.assign({}, this.props.style, {
+                <div style={Object.assign({}, style, {
                     left: 0,
                     top: 0,
-                    fontSize: this.props.size * 10,
+                    fontSize: size * 10,
                 })}>
-                    {this.props.label || this.props.children}
+                    {label || children}
                 </div>
             </div >
         );
-    }
+
 }

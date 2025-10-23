@@ -1353,7 +1353,7 @@ function WorkspaceContent ({camera, updateCamera, workspace, parsedGcode, parsed
                             height={Math.round(workspace.height * window.devicePixelRatio)}
                             ref={canvasRef} />
                     </div>
-                    <Dom3d className="workspace-content workspace-overlay" camera={viewCamera} width={workspace.width} height={workspace.height} settings={settings}>
+                    <Dom3d className="workspace-content workspace-overlay" camera={viewCamera} width={workspace.width} height={workspace.height} >
                         <GridText {...{ width: settings.toolGridWidth,
                                         height: settings.toolGridHeight,
                                         minor: Math.max(settings.toolGridMinorSpacing,0.1),
