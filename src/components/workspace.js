@@ -15,7 +15,7 @@
 
 import { mat2d, mat4, vec3, vec4 } from 'gl-matrix';
 import React, { useContext, useEffect, useState, useRef } from 'react'
-import { connect, useSelector, useDispatch } from 'react-redux'
+import { useSelector, useDispatch } from 'react-redux'
 import ReactDOM from 'react-dom';
 import { useImmer } from "use-immer";
 
@@ -34,7 +34,6 @@ import { CylImageMesh } from '../draw-commands/imageMesh'
 import { parseLaserPreview, calcLaserPreview, drawLaserPreview } from '../draw-commands/LaserPreview'
 import { convertOutlineToThickLines } from '../draw-commands/thick-lines'
 import { Input } from './forms.js';
-import SetSize from './setsize';
 import { dist } from '../lib/cam';
 import { parseGcode } from '../lib/tmpParseGcode';
 import { clamp } from '../lib/helpers'
@@ -224,7 +223,7 @@ const markerPointSize = 6;
         return result;
 };
 
-function FloatingControls({width, height, documents, documentsCache, camera, workspaceWidth, workspaceHeight, dispatch, settings}){
+function FloatingControls({documents, documentsCache, camera, workspaceWidth, workspaceHeight, dispatch, settings}){
 
     const [linkScale, setLinkScale] = useState(true);
     const [degrees, setDegrees] = useState(45);
@@ -235,6 +234,23 @@ function FloatingControls({width, height, documents, documentsCache, camera, wor
     const [hidden, setHidden] = useState(true);
     const [showTools, setShowTools] = useState(false);
     const [doc, setDoc] = useState(null);
+
+    const [size, setSize] = useState({width: 0, height: 0})
+    const setSizeRef = useRef(null);
+
+    useEffect(() => {
+        const observer = new ResizeObserver(entries => {
+            const { width, height } = entries[0].contentRect;
+            setSize({width, height});
+        });
+
+        if (setSizeRef.current)
+            observer.observe(setSizeRef.current);
+
+        return () => {
+            observer.disconnect();
+        };
+    }, []);
 
         const linkScaleChanged = e => {
             setLinkScale(e.target.checked);
@@ -405,7 +421,7 @@ function FloatingControls({width, height, documents, documentsCache, camera, wor
             vec4.transformMat4([],
                 vec4.transformMat4([], [(bounds.x1 + bounds.x2) / 2, bounds.y1, 0, 1], camera.view),
                 camera.perspective);
-        let x = (p[0] / p[3] + 1) * workspaceWidth / 2 - width / 2;
+        let x = (p[0] / p[3] + 1) * workspaceWidth / 2 - size.width / 2;
         let y = workspaceHeight - (p[1] / p[3] + 1) * workspaceHeight / 2 + 20;
 
 
@@ -424,14 +440,14 @@ function FloatingControls({width, height, documents, documentsCache, camera, wor
 
         const constraint = (point) => {
             return {
-                x: Math.min(Math.max(point.x, 0), workspaceWidth - width),
-                y: Math.min(Math.max(point.y, 0), workspaceHeight - height),
+                x: Math.min(Math.max(point.x, 0), workspaceWidth - size.width),
+                y: Math.min(Math.max(point.y, 0), workspaceHeight - size.height),
             }
         }
 
         return (
             <Draggable bounds="parent" position={constraint(drag ? drag : { x, y })} onStart={detach} onStop={handleStop} onDrag={handleDrag} disabled={hidden} handle=".handle">
-                <div style={{ position: "absolute", pointerEvents: hidden ? 'none' : 'all', display: hidden ? 'none' : 'block' }}>
+                <div ref={setSizeRef} style={{ position: "absolute", pointerEvents: hidden ? 'none' : 'all', display: hidden ? 'none' : 'block' }}>
                     <table style={{ border: '2px solid #ccc', margin: '1px', padding: '2px', backgroundColor: '#eee', }} className="floating-controls" >
                         <tbody>
                             <tr>
@@ -695,9 +711,8 @@ function drawCursor(perspective, view, drawCommands, cursorPos) {
     });
 }
 
-function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, workspace, updateWorkspace, parsedGcode, parsedLaser}) {
+function WorkspaceContent ({camera, updateCamera, workspace, parsedGcode, parsedLaser}) {
 
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [hotkeysEnabled, setHotkeysEnabled] = useState(false);
 
     const dispatch = useDispatch();
@@ -759,32 +774,17 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
                 setCylImageMesh(new CylImageMesh());
             let {drawCommands} = cacheDrawCommands;
             if (!rotaryFrameBuffer)
-                setRotaryFrameBuffer(drawCommands.createFrameBuffer(dimensions.width, dimensions.height));
+                setRotaryFrameBuffer(drawCommands.createFrameBuffer(workspace.width, workspace.height));
             else
-                rotaryFrameBuffer.resize(dimensions.width, dimensions.height);
+                rotaryFrameBuffer.resize(workspace.width, workspace.height);
         }
-    }, [dimensions, settings]);
+    }, [workspace, settings]);
 
     useEffect(() =>{
-        if (!workspace.initialZoom) {
-            let x = settings.machineBottomLeftX;
-            let y = settings.machineBottomLeftY;
-            if (settings.showMachine) {
-                x = 0;
-                y = 0;
-            }
-            updateWorkspace((draft) => {draft.initialZoom = true });
-            zoomArea(
-                x - 10,
-                y - 10,
-                x + settings.machineWidth + 10,
-                y + settings.machineHeight + 10
-            );
-        }
         setViewCamera(setCamera());
-    }, [dimensions, camera, settings, workspace]);
+    }, [camera, settings, workspace]);
 
-    const hotkeysOptions = {enabled: hotkeysEnabled, preventDefault: true,};
+    const hotkeysOptions = {enabled: hotkeysEnabled, preventDefault: true};
     useHotkeys(['alt+delete', 'meta+backspace'], () => removeSelected(), hotkeysOptions);
     useHotkeys(['control+d'], () => cloneSelected(), hotkeysOptions);
 
@@ -811,26 +811,7 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
         setHitTestFrameBuffer(drawCommands.createFrameBuffer(canvas.width, canvas.height));
     },[]);
 
-    useEffect(() => {
-        const observer = new ResizeObserver(entries => {
-            const { width, height } = entries[0].contentRect;
-            setDimensions({ width, height });
-            updateWorkspace((draft) => {
-                    draft.width = width;
-                    draft.height = height;
-                    });
-        });
-
-        if (canvasRef.current)
-            observer.observe(canvasRef.current);
-
-        return () => {
-            observer.disconnect();
-        };
-    }, []);
-
     const shouldComponentUpdate = [
-        dimensions,
         settings,
         workspace,
         viewCamera,
@@ -1090,8 +1071,8 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
     function setCamera() {
         let newCamera =
             calcCamera({
-                viewportWidth: dimensions.width,
-                viewportHeight: dimensions.height,
+                viewportWidth: workspace.width,
+                viewportHeight: workspace.height,
                 fovy: camera.fovy,
                 near: .1,
                 far: 2000,
@@ -1107,10 +1088,10 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
 
     function rayFromPoint(pageX, pageY) {
         let r = ReactDOM.findDOMNode(cacheDrawCommands.canvas).getBoundingClientRect();
-        let x = 2 * (pageX - r.left) / (dimensions.width) - 1;
-        let y = -2 * (pageY - r.top) / (dimensions.height) + 1;
+        let x = 2 * (pageX - r.left) / (workspace.width) - 1;
+        let y = -2 * (pageY - r.top) / (workspace.height) + 1;
         if (camera.showPerspective) {
-            let cursor = [x * dimensions.width / dimensions.height * Math.tan(viewCamera.fovy / 2), y * Math.tan(viewCamera.fovy / 2), -1];
+            let cursor = [x * workspace.width / workspace.height * Math.tan(viewCamera.fovy / 2), y * Math.tan(viewCamera.fovy / 2), -1];
             let origin = vec3.transformMat4([], [0, 0, 0], viewCamera.viewInv);
             let direction = vec3.sub([], vec3.transformMat4([], cursor, viewCamera.viewInv), origin);
             return { origin, direction };
@@ -1123,7 +1104,7 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
     }
 
     function xyInterceptFromPoint(pageX, pageY) {
-        if (!cacheDrawCommands || !viewCamera || !dimensions)
+        if (!cacheDrawCommands || !viewCamera || !workspace)
             return
         let { origin, direction } = rayFromPoint(pageX, pageY);
         if (!direction[2])
@@ -1146,7 +1127,7 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
             gl.disable(gl.BLEND);
             let r = ReactDOM.findDOMNode(cacheDrawCommands.canvas).getBoundingClientRect();
             let x = Math.round((pageX - r.left) * window.devicePixelRatio);
-            let y = Math.round((dimensions.height - pageY + r.top) * window.devicePixelRatio);
+            let y = Math.round((workspace.height - pageY + r.top) * window.devicePixelRatio);
             if (x >= 0 && x < cacheDrawCommands.canvas.width && y >= 0 && y < cacheDrawCommands.canvas.height) {
                 drawDocumentsHitTest(viewCamera.perspective, viewCamera.view, cacheDrawCommands.drawCommands, documentsCache);
                 let pixel = new Uint8Array(4);
@@ -1311,8 +1292,8 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
                     zoom(pointers[pointerIndex].origPageX, pointers[pointerIndex].origPageY, Math.exp(-dy / 200));
                 } else if (pointers[pointerIndex].button === 0) {
                     let view = calcCamera({
-                        viewportWidth: dimensions.width,
-                        viewportHeight: dimensions.height,
+                        viewportWidth: workspace.width,
+                        viewportHeight: workspace.height,
                         fovy: camera.fovy,
                         near: .1,
                         far: 2000,
@@ -1323,7 +1304,7 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
                         machineX: settings.machineBottomLeftX - com.workOffsetX,
                         machineY: settings.machineBottomLeftY - com.workOffsetY,
                     }).view;
-                    let scale = 2 / dimensions.width / view[0];
+                    let scale = 2 / workspace.width / view[0];
                     dx *= scale;
                     dy *= scale;
                     let n = vec3.normalize([], vec3.cross([], camera.up, vec3.sub([], camera.eye, camera.center)));
@@ -1367,12 +1348,12 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
                     onMouseOut={handleMouseOut}>
                     <div className="workspace-content">
                         <canvas
-                            style={{ width: width, height: height }}
-                            width={Math.round(width * window.devicePixelRatio)}
-                            height={Math.round(height * window.devicePixelRatio)}
+                            style={{ width: workspace.width, height: workspace.height }}
+                            width={Math.round(workspace.width * window.devicePixelRatio)}
+                            height={Math.round(workspace.height * window.devicePixelRatio)}
                             ref={canvasRef} />
                     </div>
-                    <Dom3d className="workspace-content workspace-overlay" camera={viewCamera} width={dimensions.width} height={dimensions.height} settings={settings}>
+                    <Dom3d className="workspace-content workspace-overlay" camera={viewCamera} width={workspace.width} height={workspace.height} settings={settings}>
                         <GridText {...{ width: settings.toolGridWidth,
                                         height: settings.toolGridHeight,
                                         minor: Math.max(settings.toolGridMinorSpacing,0.1),
@@ -1383,13 +1364,13 @@ function WorkspaceContent ({width, height, camera, updateCamera, zoomArea, works
                     </Dom3d>
                 </div>
 
-                <SetSize className="workspace-content workspace-overlay" selector=".floating-controls">
+                <div className="workspace-content workspace-overlay" selector=".floating-controls">
                     <FloatingControls
                         documents={documents} documentsCache={documentsCache} camera={viewCamera}
-                        workspaceWidth={width} workspaceHeight={height} dispatch={dispatch}
+                        workspaceWidth={workspace.width} workspaceHeight={workspace.height} dispatch={dispatch}
                         settings={settings}
                     />
-                </SetSize>
+                </div>
 
                 <div className={"workspace-content workspace-overlay " + mode}></div>
             </div>
@@ -1427,6 +1408,43 @@ export default function Workspace({style}){
     const [simDetails, setSimDetails] = useState("No Gcode loaded")
 
     let enableVideo = ((settings.toolVideoDevice !== null) || (!!settings.toolWebcamUrl));
+
+    const setSizeRef = useRef(null);
+
+    useEffect(() => {
+        const observer = new ResizeObserver(entries => {
+            const { width, height } = entries[0].contentRect;
+            updateWorkspace((draft) => {
+                    draft.width = width;
+                    draft.height = height;
+                    });
+        });
+
+        if (setSizeRef.current)
+            observer.observe(setSizeRef.current);
+
+        return () => {
+            observer.disconnect();
+        };
+    }, []);
+
+    useEffect(() =>{
+        if (!workspace.initialZoom) {
+            let x = settings.machineBottomLeftX;
+            let y = settings.machineBottomLeftY;
+            if (settings.showMachine) {
+                x = 0;
+                y = 0;
+            }
+            updateWorkspace((draft) => {draft.initialZoom = true });
+            zoomArea(
+                x - 10,
+                y - 10,
+                x + settings.machineWidth + 10,
+                y + settings.machineHeight + 10
+            );
+        }
+    }, [settings, workspace]);
 
     useEffect(() => {
         updateWorkspace((draft) => {draft.gcode = gcode});
@@ -1553,9 +1571,9 @@ export default function Workspace({style}){
 
     return (
             <div id="workspace" className="full-height" style={style}>
-                <SetSize id="workspace-top">
-                    <WorkspaceContent camera={camera} updateCamera={updateCamera} zoomArea={zoomArea} workspace={workspace} updateWorkspace={updateWorkspace} parsedGcode={parsedGcode} parsedLaser={parsedLaser} />
-                </SetSize>
+                <div ref={setSizeRef} id="workspace-top">
+                    <WorkspaceContent camera={camera} updateCamera={updateCamera} workspace={workspace} parsedGcode={parsedGcode} parsedLaser={parsedLaser} />
+                </div>
                 <div id="workspace-controls" style={ workspace.showControls ? { height: 'fit-content' } : { height: '42px' }}>
                     <div style={{ display: 'flex' }}>
                         <table style={{ flex: 'none' }}>
