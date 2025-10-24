@@ -13,15 +13,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import React from 'react'
-import ReactDOM from 'react-dom'
-import { connect } from 'react-redux';
+import React, {useState, useRef} from 'react'
+import { useSelector, useDispatch } from 'react-redux';
 
 import Subtree from './subtree';
 import { removeDocument, selectDocument, toggleSelectDocument, toggleVisibleDocument } from '../actions/document';
 import { addOperation, operationAddDocuments } from '../actions/operation';
-import { documents } from '../reducers/document';
-import Pointable from '../lib/Pointable';
 
 import Icon from './font-awesome';
 
@@ -38,103 +35,109 @@ export function selectedDocuments(documents) {
     return documents.filter(d => isSelected(documents, d)).map(d => d.id);
 }
 
-class DocumentLabel extends React.Component {
-    UNSAFE_componentWillMount() {
-        this.onPointerDown = this.onPointerDown.bind(this);
-        this.onPointerMove = this.onPointerMove.bind(this);
-        this.onPointerUp = this.onPointerUp.bind(this);
-        this.onPointerCancel = this.onPointerCancel.bind(this);
-    }
+function DocumentLabel({object}) {
 
-    onPointerDown(e) {
+    const dispatch = useDispatch();
+    const documents = useSelector((state) => state.documents);
+
+    const [pointerType, setPointerType] = useState('');
+    const [needToSelect, setNeedToSelect] = useState(false);
+    const [isToggle, setIsToggle] = useState(false);
+    const [dragStarted, setDragStarted] = useState(false);
+    const [drag, setDrag] = useState({x: 0, y: 0});
+
+    const docRef = useRef(null);
+
+
+    function onPointerDown(e) {
         e.preventDefault();
-        ReactDOM.findDOMNode(this).setPointerCapture(e.pointerId);
-        this.pointerType = e.pointerType;
-        if (this.pointerType === 'pen' || this.pointerType === 'touch') {
-            this.needToSelect = this.props.object.selected;
-            this.isToggle = true;
-            this.dragStarted = false;
-            if (!this.props.object.selected)
-                this.props.dispatch(toggleSelectDocument(this.props.object.id));
+        e.target.setPointerCapture(e.pointerId);
+        let newPointerType = e.pointerType;
+        let newNeedToSelect = false;
+        let newIsToggle = false;
+        if (newPointerType === 'pen' || newPointerType === 'touch') {
+            newNeedToSelect = object.selected;
+            newIsToggle = true;
+            setDragStarted(false);
+            if (!object.selected)
+                dispatch(toggleSelectDocument(object.id));
         } else {
-            this.needToSelect = false;
-            this.isToggle = e.ctrlKey || e.shiftKey;
-            this.dragStarted = false;
-            if (this.props.object.selected)
-                this.needToSelect = true;
-            else if (this.isToggle)
-                this.props.dispatch(toggleSelectDocument(this.props.object.id));
+            newNeedToSelect = false;
+            newIsToggle = e.ctrlKey || e.shiftKey;
+            setDragStarted(false);
+            if (object.selected)
+                newNeedToSelect = true;
+            else if (newIsToggle)
+                dispatch(toggleSelectDocument(object.id));
             else
-                this.props.dispatch(selectDocument(this.props.object.id));
+                dispatch(selectDocument(object.id));
+        setPointerType(newPointerType);
+        setNeedToSelect(newNeedToSelect);
+        setIsToggle(newIsToggle);
         }
     }
 
-    onPointerMove(e) {
-        if (e.pointerType !== this.pointerType)
+    function onPointerMove(e) {
+        if (e.pointerType !== pointerType)
             return;
         e.preventDefault();
         let elem = document.elementFromPoint(e.clientX, e.clientY);
-        this.dragX = e.clientX;
-        this.dragY = e.clientY;
-        if (elem != ReactDOM.findDOMNode(this) && !this.dragStarted) {
-            this.dragStarted = true;
-            if ((this.pointerType === 'pen' || this.pointerType === 'touch') && !this.needToSelect)
-                this.props.dispatch(selectDocument(this.props.object.id));
+        setDrag({x: e.clientX, y: e.clientY})
+        if (elem != docRef.current && !dragStarted) {
+            setDragStarted(true);
+            if ((pointerType === 'pen' || pointerType === 'touch') && !needToSelect)
+                dispatch(selectDocument(object.id));
         }
-        if (this.dragStarted)
-            this.forceUpdate();
     }
 
-    drag(clientX, clientY) {
+    function drop(clientX, clientY) {
         let elem = document.elementFromPoint(clientX, clientY);
         while (elem && !elem.dataset.operationId)
             elem = elem.parentElement;
         if (elem) {
-            let documents = this.props.documents.filter(d => isSelected(this.props.documents, d)).map(d => d.id);
+            let docs = documents.filter(d => isSelected(documents, d)).map(d => d.id);
             if (elem.dataset.operationId === 'new')
-                this.props.dispatch(addOperation({ documents }));
+                dispatch(addOperation({ documents: docs }));
             else
-                this.props.dispatch(operationAddDocuments(elem.dataset.operationId, elem.dataset.operationTabs, documents));
+                dispatch(operationAddDocuments(elem.dataset.operationId, elem.dataset.operationTabs, docs));
         }
     }
 
-    onPointerUp(e) {
-        if (e.pointerType !== this.pointerType)
+    function onPointerUp(e) {
+        if (e.pointerType !== pointerType)
             return;
         e.preventDefault();
-        if (this.dragStarted) {
-            this.drag(e.clientX, e.clientY);
-            this.dragStarted = false;
-        } else if (this.needToSelect) {
-            if (this.isToggle)
-                this.props.dispatch(toggleSelectDocument(this.props.object.id));
+        if (dragStarted) {
+            drop(e.clientX, e.clientY);
+            setDragStarted(false);
+        } else if (needToSelect) {
+            if (isToggle)
+                dispatch(toggleSelectDocument(object.id));
             else
-                this.props.dispatch(selectDocument(this.props.object.id));
+                dispatch(selectDocument(object.id));
         }
-        this.pointerType = '';
-        this.forceUpdate();
+        setPointerType('');
+        e.target.releasePointerCapture(e.pointerId);
     }
 
-    onPointerCancel(e) {
-        if (e.pointerType !== this.pointerType)
+    function onPointerCancel(e) {
+        if (e.pointerType !== pointerType)
             return;
         e.preventDefault();
-        this.dragStarted = false;
-        this.pointerType = '';
-        this.forceUpdate();
+        setDragStarted(false);
+        setPointerType('');
+        e.target.releasePointerCapture(e.pointerId);
     }
 
-    render() {
-        let {documents} = this.props;
         let style;
-        if (this.props.object.selected)
+        if (object.selected)
             style = { userSelect: 'none', cursor: 'grab', textDecoration: 'bold', color: '#FFF', paddingLeft: 5, paddingRight: 5, paddingBottom: 3, backgroundColor: '#337AB7', border: '1px solid', borderColor: '#2e6da4', borderRadius: 2 };
         else
             style = { userSelect: 'none', cursor: 'copy', paddingLeft: 5, paddingRight: 5, paddingBottom: 3 };
         let dragDiv;
-        if (this.dragStarted)
+        if (dragStarted)
             dragDiv = (
-                <div style={{ position: 'absolute', zIndex: 1000, left: this.dragX, top: this.dragY, pointerEvents: 'none' }}>
+                <div style={{ position: 'absolute', zIndex: 1000, left: drag.x, top: drag.y, pointerEvents: 'none' }}>
                     <div style={{ position: 'relative', transform: 'translate(-50%,-50%)' }}>
                         {documents.filter(d => isSelected(documents, d)).map(doc =>
                             <div key={doc.id} style={{ color: '#FFF', backgroundColor: '#337AB7' }}>{doc.name}</div>)}
@@ -143,19 +146,18 @@ class DocumentLabel extends React.Component {
             );
 
         return (
-            <Pointable tagName='span' style={style}
-                onPointerDown={this.onPointerDown} onPointerMove={this.onPointerMove} onPointerUp={this.onPointerUp} onPointerCancel={this.onPointerCancel}>
-                {this.props.object.name}
+            <span ref={docRef} style={style}
+                onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}>
+                {object.name}
                 {dragDiv}
-            </Pointable>
+            </span>
         );
-    }
 };
-DocumentLabel = connect(
-    state => ({ documents: state.documents }),
-)(DocumentLabel);
 
-function DocumentRight({object, dispatch}) {
+function DocumentRight({object}) {
+
+    const dispatch = useDispatch();
+
     return (
         <div className="btn-group">
             <button
@@ -171,7 +173,6 @@ function DocumentRight({object, dispatch}) {
         </div>
     );
 }
-DocumentRight = connect()(DocumentRight);
 
 const getSelectedParents=(documents)=>{
     let objects = documents.filter(i=>i.selected);
