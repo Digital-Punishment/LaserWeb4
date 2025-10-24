@@ -16,7 +16,6 @@
 import { mat2d, mat4, vec3, vec4 } from 'gl-matrix';
 import React, { useContext, useEffect, useState, useRef } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import ReactDOM from 'react-dom';
 import { useImmer } from "use-immer";
 
 import '../styles/simbar.css';
@@ -1087,7 +1086,9 @@ function WorkspaceContent ({camera, updateCamera, workspace, parsedGcode, parsed
     }
 
     function rayFromPoint(pageX, pageY) {
-        let r = ReactDOM.findDOMNode(cacheDrawCommands.canvas).getBoundingClientRect();
+        if (!canvasRef)
+            return
+        let r = canvasRef.current.getBoundingClientRect();
         let x = 2 * (pageX - r.left) / (workspace.width) - 1;
         let y = -2 * (pageY - r.top) / (workspace.height) + 1;
         if (camera.showPerspective) {
@@ -1114,6 +1115,8 @@ function WorkspaceContent ({camera, updateCamera, workspace, parsedGcode, parsed
     }
 
     function hitTest(pageX, pageY) {
+        if (!canvasRef)
+            return
         if (!cacheDrawCommands || !workspace.showDocuments)
             return;
         if (settings.machineAEnabled && workspace.showRotary)
@@ -1125,7 +1128,7 @@ function WorkspaceContent ({camera, updateCamera, workspace, parsedGcode, parsed
             gl.clearColor(1, 1, 1, 1);
             gl.clear(gl.COLOR_BUFFER_BIT);
             gl.disable(gl.BLEND);
-            let r = ReactDOM.findDOMNode(cacheDrawCommands.canvas).getBoundingClientRect();
+            let r = canvasRef.current.getBoundingClientRect();
             let x = Math.round((pageX - r.left) * window.devicePixelRatio);
             let y = Math.round((workspace.height - pageY + r.top) * window.devicePixelRatio);
             if (x >= 0 && x < cacheDrawCommands.canvas.width && y >= 0 && y < cacheDrawCommands.canvas.height) {
@@ -1142,9 +1145,9 @@ function WorkspaceContent ({camera, updateCamera, workspace, parsedGcode, parsed
     }
 
     function zoom(pageX, pageY, amount) {
-        if (!cacheDrawCommands)
+        if (!canvasRef)
             return
-        let r = ReactDOM.findDOMNode(cacheDrawCommands.canvas).getBoundingClientRect();
+        let r = canvasRef.current.getBoundingClientRect();
         let newFovy = Math.max(.02, Math.min(Math.PI - .02, camera.fovy * amount));
         let oldScale = vec3.distance(camera.eye, camera.center) * Math.tan(camera.fovy / 2) / (r.height / 2);
         let newScale = vec3.distance(camera.eye, camera.center) * Math.tan(newFovy / 2) / (r.height / 2);
