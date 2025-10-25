@@ -16,7 +16,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux'
 
-import { splitterSetSize } from '../actions/splitters'
+import {splitterResized} from "../reducers/splittersSlice";
 
 export default function Splitter({ style, split, splitterId, initialSize, minSize, resizerStyle, className, children }) {
 
@@ -32,9 +32,9 @@ export default function Splitter({ style, split, splitterId, initialSize, minSiz
 
     useEffect(() => {
         if (splitters[splitterId] === undefined)
-            dispatch(splitterSetSize(splitterId, initialSize));
+            dispatch(splitterResized({id: splitterId, size: initialSize}));
         if (minSize && splitters[splitterId] < minSize)
-            dispatch(splitterSetSize(splitterId, minSize));
+            dispatch(splitterResized({id: splitterId, size: minSize}));
     }, [initialSize, minSize, splitters]);
 
     useEffect(() => {
@@ -71,8 +71,9 @@ export default function Splitter({ style, split, splitterId, initialSize, minSiz
         let delta = split === 'horizontal' ? clientY - currentMouse.current.y : clientX - currentMouse.current.x;
         setMouse({x: clientX, y: clientY});
         let newSize = currentSize.current + delta;
-        if (!minSize || (minSize && newSize >= minSize))
-            dispatch(splitterSetSize(splitterId, newSize));
+        if (newSize !== currentSize.current)
+            if ((!minSize && newSize >= 0) || (minSize && newSize >= minSize))
+                dispatch(splitterResized({id: splitterId, size: newSize}));
     }
 
     function mouseMove(e) {

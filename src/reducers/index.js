@@ -5,7 +5,7 @@ import { gcode } from './gcode'
 import { operations, currentOperation, operationsAddDocuments, fixupOperations } from './operation'
 import panes from './panesSlice'
 import { settings } from './settings'
-import { splitters } from './splitters'
+import splitters from './splittersSlice'
 
 import { machineProfiles } from './machine-profiles'
 import { materialDatabase } from './material-database'
