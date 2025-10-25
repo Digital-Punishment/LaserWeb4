@@ -11,7 +11,7 @@ import { useSelector, useDispatch } from 'react-redux'
 import Icon from './font-awesome'
 
 // Actions
-import * as actions from '../actions/panes'
+import { paneSelected } from "../reducers/panesSlice";
 
 import { SettingsValidator } from './settings';
 import { CAMValidator } from './cam';
@@ -73,7 +73,7 @@ export default function Dock({children}) {
      const dimmed = !useSelector((state) => state.panes.visible);
 
      const onButtonClick = (id) => {
-         dispatch(actions.selectPane(id))
+         dispatch(paneSelected({id}))
      }
 
     /**

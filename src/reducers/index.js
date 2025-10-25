@@ -3,7 +3,7 @@ import { undoCombineReducers, shouldSaveUndo } from './undo'
 import { documents, documentsLoad } from './document'
 import { gcode } from './gcode'
 import { operations, currentOperation, operationsAddDocuments, fixupOperations } from './operation'
-import panes from './panes'
+import panes from './panesSlice'
 import { settings } from './settings'
 import { splitters } from './splitters'
 
