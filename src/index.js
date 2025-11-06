@@ -26,7 +26,7 @@ const reducer = compose(
 )(hot);
 
 const storage = compose(
-  filter(['settings','machineProfiles','splitters','materialDatabase'])
+  filter(['settings','machineProfiles','splitters','materialDatabase', 'macros'])
 )(adapter(window.localStorage));
 
 

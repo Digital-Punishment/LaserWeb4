@@ -2,7 +2,6 @@ import { objectNoId } from '../reducers/object'
 import Validator from 'validatorjs';
 import { GlobalStore } from '../index';
 import { actionTypes } from 'redux-localstorage'
-import { macros, MACROS_INITIALSTATE } from './macros'
 
 export const version = require("../../package.json").version;
 
@@ -187,14 +186,11 @@ export const SETTINGS_INITIALSTATE = {
     jogFeedXY: 1800,
     jogFeedZ: 300,
 
-    macros: MACROS_INITIALSTATE,
-
     uiFcDrag: null,
 }
 
 export const settings = (state, action) => {
     state = objectNoId('settings', SETTINGS_INITIALSTATE)(state, action);
-    Object.assign(state, { macros: macros(state.macros||{}, action)});
     switch (action.type) {
         case actionTypes.INIT:
             state = Object.assign({}, state, { __version: version })

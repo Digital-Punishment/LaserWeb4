@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import ReactDOM from 'react-dom';
 import { useImmer } from "use-immer";
@@ -6,16 +6,19 @@ import { PanelGroup, Panel, Tooltip } from 'react-bootstrap';
 
 import Icon from './font-awesome'
 
-import { addMacro, removeMacro, setMacro, fireMacroById } from '../actions/macros'
+import { macroChanged, macroRemoved, macroLocked } from "../reducers/macrosSlice"
 import { runCommand } from './com.js';
 
 import { Button, FormControl, ButtonGroup, ButtonToolbar } from 'react-bootstrap'
 
 import Validator from 'validatorjs';
-import { MACRO_VALIDATION_RULES } from '../reducers/macros'
-import { v4 as uuidv4 } from 'uuid';
 
 import { useHotkeys } from 'react-hotkeys-hook';
+
+export const MACRO_VALIDATION_RULES = {
+    label: 'required',
+    gcode: 'required'
+}
 
 export function Macros({}) {
 
@@ -24,41 +27,59 @@ export function Macros({}) {
         const gcodeRef = useRef(null);
 
         const dispatch = useDispatch();
-        const macros = useSelector((state) => state.settings.macros);
+        const macros = useSelector((state) => state.macros);
 
-        const [macroState, updateMacroState] = useImmer({ selected: [], label: "", keybinding: "", gcode: "", meta: [], _locked: false });
+        const [errors, setErrors] = useState(undefined);
+        const [editable, setEditable] = useState(false);
+        const [selected, setSelected] = useState([]);
+        const emptyMacro = { label: "", keybinding: "", gcode: "", _locked: false };
+        const [macroState, updateMacroState] = useImmer(emptyMacro);
 
         const metakeys = ['ctrl', 'shift', 'command', 'alt']
 
+    useEffect(() => {
+        if (selected.length === 1){
+            setEditable(true);
+            if (selected[0] === "")
+                updateMacroState((draft) => emptyMacro);
+            else
+                updateMacroState((draft) => {return {...macros[selected[0]]}});
+        } else{
+            setEditable(false);
+            updateMacroState((draft) => emptyMacro);
+        }
+    }, [macros, selected]);
+
+    useEffect(() => {
+        setErrors(getErrors(macroState));
+    }, [macroState])
 
     function handleSelection(e) {
         let opts = [].slice.call(e.target.selectedOptions).map(o => { return o.value; });
-        updateMacroState((draft) => {draft.selected = opts });
-        if (e.target.value) {
-            updateMacroState((draft) => {Object.assign(draft, { _locked: macros[e.target.value]._locked || false }, macros[e.target.value])});
-        } else {
-            updateMacroState((draft) => {Object.assign(draft, { keybinding: "", label: "", gcode: "", _locked: false })});
-        }
-
+        setSelected(opts);
     }
 
     function handleAppend(e) {
-        let macro = { keybinding: [...macroState.meta, macroState.keybinding].join('+'), label: macroState.label, gcode: macroState.gcode }
-        let errors = getErrors(macro);
+        let macro = { keybinding: macroState.keybinding, label: macroState.label, gcode: macroState.gcode, _locked: macroState._locked }
+        let id =  selected[0];
 
-        if (!errors && macroState.selected.length < 2) {
-            let id = (macroState.selected.length) ? macroState.selected[0] : uuidv4();
-            dispatch(setMacro({ [id]: macro }));
+        if (!errors) {
+            dispatch(macroChanged(id, macro));
         } else {
             console.error(JSON.stringify(errors))
+        };
+        if (id === ""){
+            setSelected([]);
+            updateMacroState((draft) => emptyMacro);
         }
-
-        updateMacroState((draft) => {Object.assign(draft, { ...macro, selected: [] })});
     }
 
     function handleRemove(e) {
-        dispatch(removeMacro(macroState.selected));
-        updateMacroState((draft) => {Object.assign(draft, { selected: [], keybinding: "", label: "", gcode: "", _locked: false })});
+        for (let i in selected) {
+            if (selected[i] !== "" && !macros[selected[i]]._locked)
+                dispatch(macroRemoved({id: selected[i]}));
+        }
+        setSelected([]);
     }
 
     function handleFormChange(e, fieldid) {
@@ -68,6 +89,12 @@ export function Macros({}) {
     function handleMeta(e, item) {
 
         let tokens = new Set(macroState.keybinding.trim().split("+"));
+        let button = "";
+        tokens.forEach((token) => {
+            if (!metakeys.includes(token))
+                button = token;
+        });
+        tokens.delete(button);
 
         if (tokens.has(item)) {
             tokens.delete(item);
@@ -75,7 +102,13 @@ export function Macros({}) {
             tokens.add(item);
         }
 
-        updateMacroState((draft) => {draft.keybinding = Array.from(tokens).sort().join('+') });
+        updateMacroState((draft) => {draft.keybinding = Array.from(tokens).sort().concat(button).join('+') });
+    }
+
+    function handleLockToggle(e) {
+        for (let i in selected) {
+            dispatch(macroLocked({id: selected[i]}));
+        }
     }
 
     function getErrors(macro) {
@@ -83,23 +116,25 @@ export function Macros({}) {
         return (validator.passes()) ? undefined : validator.errors.errors;
     }
 
-        let errors = getErrors(macroState);
+    let lockedLabel = macroState._locked ? "Unlock" : "Lock";
 
         return (
             <div className="macros">
-                <small className="help-block">Append new key binding to Gcode. App must be reloaded to take effect</small>
-                <FormControl componentClass="select" size="10" multiple onChange={(e) => handleSelection(e)} value={macroState.selected}>
-                    {Object.entries(macros).map((opt, i) => { let [key, value] = opt; return <option key={i} value={key}>{(value.keybinding) ? `[${value.keybinding}] ` : ''}{value.label}</option> })}
+                {/* <small className="help-block">Append new key binding to Gcode. App must be reloaded to take effect </small> */}
+                <FormControl componentClass="select" size="10" multiple onChange={(e) => handleSelection(e)} value={selected}>
+                    {Object.entries(macros).map((opt, i) => { let [key, value] = opt; return <option key={i} value={key}>{(value.keybinding) ? `[${value.keybinding}] ` : ''}{value.label}{(value._locked) ? " (locked)" : ''}</option> })}
+                    <option key={Object.keys(macros).length} value={""}>[New macro...]</option>
                 </FormControl>
 
-                <FormControl type="text" ref={labelRef} placeholder="Label" value={macroState.label} onChange={(e) => handleFormChange(e, 'label')} />
-                <FormControl type="text" ref={keybindingRef} placeholder="Keybinding" value={macroState.keybinding} onChange={(e) => handleFormChange(e, 'keybinding')} />
+                <FormControl type="text" ref={labelRef} disabled={!editable || macroState._locked} placeholder="Label" value={macroState.label} onChange={(e) => handleFormChange(e, 'label')} />
+                <FormControl type="text" ref={keybindingRef} disabled={!editable || macroState._locked} placeholder="Keybinding" value={macroState.keybinding} onChange={(e) => handleFormChange(e, 'keybinding')} />
                 <ButtonGroup>
-                    {metakeys.map((meta, i) => { return <Button key={i} bsSize="xsmall" bsStyle={(macroState.keybinding.indexOf(meta) !== -1) ? 'primary' : 'default'} onClick={(e) => handleMeta(e, meta)}>{meta}</Button> })}
+                    {metakeys.map((meta, i) => { return <Button key={i} disabled={!editable || macroState._locked} bsSize="xsmall" bsStyle={(macroState.keybinding.indexOf(meta) !== -1) ? 'primary' : 'default'} onClick={(e) => handleMeta(e, meta)}>{meta}</Button> })}
                 </ButtonGroup>
-                <FormControl style={{resize: "vertical", fontFamily: "monospace, monospace"}} componentClass="textarea" ref={gcodeRef} placeholder="Gcode" value={macroState.gcode} onChange={(e) => handleFormChange(e, 'gcode')} />
-                <Button bsStyle="primary" disabled={(errors !== undefined) || macroState._locked} onClick={(e) => handleAppend(e)} style={{ float: "left" }} title={JSON.stringify(errors)}><Icon name="share" /> Set</Button>
-                <Button bsStyle="danger" disabled={macroState._locked} title={macroState._locked ? 'This is a locked macro' : undefined} onClick={(e) => handleRemove(e)} style={{ float: "right" }}><Icon name="trash" /> Remove</Button>
+                <FormControl style={{resize: "vertical", fontFamily: "monospace, monospace"}} componentClass="textarea" disabled={!editable || macroState._locked} ref={gcodeRef} placeholder="Gcode" value={macroState.gcode} onChange={(e) => handleFormChange(e, 'gcode')} />
+                <Button bsStyle="primary" disabled={errors !== undefined || macroState._locked || !selected.length} onClick={(e) => handleAppend(e)} style={{ float: "left" }} title={JSON.stringify(errors)}><Icon name="share" /> Set</Button>
+                <Button bsStyle="primary" disabled={!selected.length} onClick={(e) => handleLockToggle(e)} style={{ float: "left" }} title={lockedLabel}><Icon name={lockedLabel.toLowerCase()} /> {lockedLabel}</Button>
+                <Button bsStyle="danger" disabled={macroState._locked || !selected.length} title={macroState._locked ? 'This is a locked macro' : undefined} onClick={(e) => handleRemove(e)} style={{ float: "right" }}><Icon name="trash" /> Remove</Button>
             </div>
 
         )
@@ -107,7 +142,7 @@ export function Macros({}) {
 
 export function MacrosBar() {
 
-    const macros = useSelector((state) => state.settings.macros);
+    const macros = useSelector((state) => state.macros);
     const mode = useSelector((state) => state.panes.selected);
 
     const hotKeyOptions = {enabled: (mode === 'jog'), preventDefault: true};

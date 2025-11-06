@@ -6,6 +6,7 @@ import { operations, currentOperation, operationsAddDocuments, fixupOperations }
 import panes from './panesSlice'
 import { settings } from './settings'
 import splitters from './splittersSlice'
+import macros from './macrosSlice'
 
 import { machineProfiles } from './machine-profiles'
 import { materialDatabase } from './material-database'
@@ -14,7 +15,7 @@ import { com } from './com'
 import omit from 'object.omit';
 import { deepMerge } from '../lib/helpers'
 
-const combined = undoCombineReducers({ documents, operations, currentOperation, gcode, panes, settings, splitters, machineProfiles, materialDatabase, com }, {}, shouldSaveUndo);
+const combined = undoCombineReducers({ documents, operations, currentOperation, gcode, panes, settings, macros, splitters, machineProfiles, materialDatabase, com }, {}, shouldSaveUndo);
 
 export default function reducer(state, action) {
     switch (action.type) {

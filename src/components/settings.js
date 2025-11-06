@@ -13,6 +13,7 @@ import { SETTINGS_VALIDATION_RULES, ValidateSettings } from '../reducers/setting
 import MachineProfile from './machine-profiles';
 import { MaterialDatabaseButton } from './material-database';
 import { Macros } from './macros'
+import { macroReset } from "../reducers/macrosSlice"
 
 import { NumberField, TextField, ToggleField, QuadrantField, FileField, CheckBoxListField, SelectField, InputRangeField, ColorPicker, Info } from './forms';
 import { PanelGroup, Panel, Tooltip, OverlayTrigger, FormControl, InputGroup, ControlLabel, FormGroup, ButtonGroup, Label, Collapse, Badge, ButtonToolbar, Button } from 'react-bootstrap';
@@ -567,7 +568,7 @@ const mapStateToProps = (state) => {
 const mapDispatchToProps = (dispatch) => {
     return {
         handleResetMacros: () => {
-            confirm("Are you sure? This will revert your macros to the machine default list.", (data) => { if (data !== null) dispatch({ type: "MACROS_RESET" }) })
+            confirm("Are you sure? This will revert your macros to the machine default list.", (data) => { if (data !== null) dispatch(macroReset()) })
 
         },
         handleSettingChange: (attrs) => {
