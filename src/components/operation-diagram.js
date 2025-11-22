@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import React from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import ReactDOM from 'react-dom'
 import Snap from 'snapsvg-cjs';
 
@@ -57,23 +57,27 @@ const types = {
     'Mill V Carve': { show: ['MillVCarve', 'toolAngle', 'millStartZ', 'millRapidZ', 'zStep'] },
 };
 
-export class OperationDiagram extends React.Component {
-    UNSAFE_componentWillMount() {
+export function OperationDiagram({ operations, currentOperation }) {
+
+    const [svg, setSvg] = useState(null);
+
+    const svgRef = useRef(null);
+
+    useEffect(() => {
         fetch('cnctoolpath.svg')
             .then(resp => resp.text())
             .then(content => {
-                this.svg = Snap.parse(content).select('svg').node;
-                this.svg.style.width = '100%';
-                this.svg.style.height = 'inherit';
-                ReactDOM.findDOMNode(this).appendChild(this.svg);
-                this.updateSvg();
+                let newSvg = Snap.parse(content).select('svg').node;
+                newSvg.style.width = '100%';
+                newSvg.style.height = 'inherit';
+                setSvg(newSvg);
             });
-    }
+    }, []);
 
-    updateSvg(props) {
-        let { operations, currentOperation } = this.props;
-        if (!this.svg)
+    useEffect(() => {
+        if (!svg || !svgRef)
             return;
+        svgRef.current.appendChild(svg);
         for (let id of hide)
             document.getElementById(id).style.display = 'none';
         let op = operations.find(op => op.id === currentOperation);
@@ -109,11 +113,8 @@ export class OperationDiagram extends React.Component {
                 document.getElementById('CCW').style.display = 'inline';
             }
         }
-    }
+    }, [ svg, operations, currentOperation ])
 
-    render() {
-        this.updateSvg();
-        let visible = this.props.currentOperation && this.props.operations.length;
-        return <div style={{ transition: "height 0.25s ease-in", height: visible ? 100 : 0 }} />;
-    }
+        let visible = currentOperation && operations.length;
+        return <div ref={svgRef} style={{ transition: "height 0.25s ease-in", height: visible ? 100 : 0 }} />
 };
