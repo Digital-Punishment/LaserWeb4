@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import React from 'react'
-import { connect } from 'react-redux';
+import React, { useState, useEffect, useRef } from 'react'
+import { useSelector, useDispatch } from 'react-redux';
 import Select, { components } from 'react-select';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -23,7 +23,6 @@ import { selectDocument } from '../actions/document'
 import { addOperation } from '../actions/operation'
 import { hasClosedRawPaths } from '../lib/mesh';
 import { Input, InputRangeField } from './forms.js';
-import { GetBounds, withGetBounds, withStoredBounds } from './get-bounds.js';
 import { selectedDocuments } from './document'
 
 import Toggle from 'react-toggle';
@@ -31,7 +30,7 @@ import { isObject, getDescendantProp } from '../lib/helpers';
 
 import { MaterialPickerButton, MaterialSaveButton } from './material-database'
 
-import { ButtonToolbar, Button, ButtonGroup } from 'react-bootstrap';
+import { ButtonToolbar, Button, ButtonGroup, Overlay, Tooltip } from 'react-bootstrap';
 import Icon from './font-awesome'
 
 import { Details } from './material-database'
@@ -82,14 +81,17 @@ function RangeInput(minValue, maxValue) {
     }
 }
 
-function TagInput(statekey, opts = { multi: true, simpleValue: true, delimiter: ',', clearable: true }, connector) {
-    if (!connector) connector = (state) => { return { options: Object.entries(getDescendantProp(state, statekey)).map(i => { return { label: i[1].label, value: i[0] } }) } }
-    return connect(connector)(class extends React.Component {
-        render() {
-            return <Select options={this.props.options} value={this.props.op[this.props.field.name]} onChange={e => this.props.onChangeValue(e)} {...{ ...opts }} />
-        }
-    });
+function TagInput(statekey, opts = { isMulti: true, delimiter: ',', isClearable: true }) {
+    return function({ op, field, onChangeValue }) {
+        const [options, setOptions] = useState();
+        const optState = useSelector((state) => state[statekey]);
 
+        useEffect(() => {
+            setOptions(Object.entries(optState).map(i => { return { label: i[1].label, value: i[0] } }));
+        }, [optState]);
+
+        return <Select options={options} value={op[field.name]} onChange={e => onChangeValue(e)} {...{ ...opts }} />
+    }
 }
 
 function ButtonInput(args) {
@@ -137,20 +139,15 @@ function ColorBoxValue({ data, ...props }) {
     );
 }
 
-class FilterInput extends React.Component {
-    UNSAFE_componentWillMount() {
-        this.onChange = this.onChange.bind(this);
-    }
+function FilterInput({ op, field, onChangeValue, fillColors, strokeColors }) {
 
-    onChange(v) {
+    function onChange(v) {
         if (v)
-            this.props.onChangeValue(JSON.parse(v.value));
+            onChangeValue(JSON.parse(v.value));
         else
-            this.props.onChangeValue(null);
+            onChangeValue(null);
     }
 
-    render() {
-        let { op, field, onChange, onChangeValue, operationsBounds, fillColors, strokeColors, settings, ...rest } = this.props;
         let raw = op[field.name];
         let colors = field.name === 'filterFillColor' ? fillColors : strokeColors;
         let value;
@@ -160,134 +157,133 @@ class FilterInput extends React.Component {
             value = null;
         return (
             <Select
-                value={value} options={colors} onChange={this.onChange}
+                value={value} options={colors} onChange={onChange}
                 isSearchable={false} isClearable={true} placeholder="Select a color..."
-                components={{Option: ColorBoxOption, SingleValue: ColorBoxValue}} {...rest} />
+                components={{Option: ColorBoxOption, SingleValue: ColorBoxValue}} />
         );
-    }
 }
 
-export function Error(props) {
-    let { bounds, operationsBounds, message } = props;
+export function Error({ target, show, id, message }) {
+
     return (
-        <div className="error-bubble-clip" style={{ left: operationsBounds.right, top: operationsBounds.top }}>
-            <div style={{ height: operationsBounds.bottom - operationsBounds.top }}>
-                <div className='error-bubble' style={{ top: (bounds.top + bounds.bottom) / 2 - operationsBounds.top }}>
-                    <div className='error-bubble-arrow' />
-                    <div className='error-bubble-message'>{message}</div>
-                </div>
-            </div>
-        </div>
+        <Overlay target={target} show={show} placement="right">
+            <Tooltip id={id} className="error-tooltip" >
+                {message}
+            </Tooltip>
+        </Overlay>
     );
 }
-Error = withStoredBounds(Error);
 
-function NoOperationsError(props) {
-    let { documents, operations, operationsBounds } = props;
-    if (documents.length && !operations.length)
-        return <GetBounds Type="span"><Error operationsBounds={operationsBounds} message='Drag Documents(s) Here' /></GetBounds>;
-    else
-        return <span />;
-}
+function Field({ op, field, selected, setAttrs, fillColors, strokeColors, justControl, parent, index }) {
 
-class Field extends React.Component {
-    UNSAFE_componentWillMount() {
-        this.onChangeValue = this.onChangeValue.bind(this);
-        this.onChange = this.onChange.bind(this);
-        this.onFocus = this.onFocus.bind(this);
-    }
+    const [showError, setShowError] = useState(false);
+    const [errorMessage, setErrorMessage] = useState("");
 
-    onChangeValue(v) {
-        let { op, field, setAttrs } = this.props;
+    const dispatch = useDispatch();
+    const settings = useSelector((state) => state.settings);
+    const panes = useSelector((state) => state.panes);
+    const splitters = useSelector((state) => state.splitters);
+
+    const errorRef = useRef(null)
+
+    useEffect(() => {
+        if (field.check && !field.check(op[field.name], settings, op, parent, index))
+            setShowError(true);
+        else
+            setShowError(false);
+
+        setErrorMessage((typeof field.error == 'function') ? field.error(op[field.name], settings, op, parent, index) : field.error);
+    }, [ field, settings, op, parent, index ]);
+
+    function onChangeValue(v) {
         if (op[field.name] !== v)
-            this.props.dispatch(setAttrs({ [field.name]: v }, op.id));
+            dispatch(setAttrs({ [field.name]: v }, op.id));
     }
 
-    onChange(e) {
-        this.onChangeValue(e.target.value);
+    function onChange(e) {
+        onChangeValue(e.target.value);
     }
 
-    onFocus(e) {
-        if (!this.props.selected)
-            this.props.dispatch(setCurrentOperation(this.props.op.id));
+    function onFocus(e) {
+        if (!selected)
+            dispatch(setCurrentOperation(op.id));
     }
 
-    render() {
-        let { op, field, operationsBounds, fillColors, strokeColors, settings, dispatch, justControl, parent, index } = this.props;
         let Input = field.input;
         let { units, wide, style } = field;
-        let error;
         if (units === 'mm/min' && settings.toolFeedUnits === 'mm/s')
             units = settings.toolFeedUnits;
-        if (field.check && !field.check(op[field.name], settings, op, parent, index))
-            error = <Error operationsBounds={operationsBounds} message={(typeof field.error == 'function') ? field.error(op[field.name], settings, op, parent, index) : field.error} />;
 
         let Ctx = field.contextMenu;
         let label = (Ctx) ? (<Ctx {...{ dispatch, op, field, settings }}><span style={{ borderBottom: "1px dotted darkgray", cursor: "copy" }}>{field.label}</span></Ctx>) : field.label;
 
         if (justControl) {
             return (
-                <GetBounds Type="div">
+                <div ref={errorRef}>
                     <Input
-                        {...{ op, field, operationsBounds, fillColors, strokeColors, settings, dispatch, style }}
-                        onChange={this.onChange} onChangeValue={this.onChangeValue} onFocus={this.onFocus} />
-                    {error}
-                </GetBounds>
+                        {...{ op, field,  fillColors, strokeColors, settings, dispatch, style }}
+                        onChange={onChange} onChangeValue={onChangeValue} onFocus={onFocus} />
+                    {(panes.visible && errorRef) ? <Error key={splitters.sidebar+splitters.cam_documents} target={errorRef.current} show={showError} id="FieldError" message={errorMessage} /> : undefined}
+                </div>
             );
         }
 
         if (wide) {
             return (
-                <GetBounds Type="tr">
+                <tr ref={errorRef}>
                     <td colSpan="3">
                         <Input
-                            {...{ op, field, operationsBounds, fillColors, strokeColors, settings, dispatch, style }}
-                            onChange={this.onChange} onChangeValue={this.onChangeValue} onFocus={this.onFocus} />
+                            {...{ op, field,  fillColors, strokeColors, settings, dispatch, style }}
+                            onChange={onChange} onChangeValue={onChangeValue} onFocus={onFocus} />
                     </td>
-                    <td>{units}{error}</td>
-                </GetBounds>
+                    <td>
+                        {units}
+                        {(panes.visible && errorRef) ? <Error key={splitters.sidebar+splitters.cam_documents} target={errorRef.current} show={showError} id="FieldError" message={errorMessage} /> : undefined}
+                    </td>
+                </tr>
             );
         }
 
         return (
-            <GetBounds Type="tr">
+            <tr ref={errorRef}>
                 <th width="50%">{label}</th>
                 <td>
                     <Input
-                        {...{ op, field, operationsBounds, fillColors, strokeColors, settings, dispatch, style }}
-                        onChange={this.onChange} onChangeValue={this.onChangeValue} onFocus={this.onFocus} />
+                        {...{ op, field,  fillColors, strokeColors, settings, dispatch, style }}
+                        onChange={onChange} onChangeValue={onChangeValue} onFocus={onFocus} />
                 </td>
-                <td>{units}{error}</td>
-            </GetBounds>
+                <td>
+                    {units}
+                    {(panes.visible && errorRef) ? <Error key={splitters.sidebar+splitters.cam_documents} target={errorRef.current} show={showError} id="FieldError" message={errorMessage} /> : undefined}
+                </td>
+            </tr>
         );
-    }
 };
 
-class Doc extends React.Component {
-    UNSAFE_componentWillMount() {
-        this.remove = e => {
-            this.props.dispatch(operationRemoveDocument(this.props.op.id, this.props.isTab, this.props.id));
-        }
-    }
+function Doc({ op, id, isTab }) {
 
-    render() {
-        let { op, documents, id } = this.props;
+    const dispatch = useDispatch();
+    const settings = useSelector((state) => state.settings);
+    const documents = useSelector((state) => state.documents);
+
+        const remove = e => {
+            dispatch(operationRemoveDocument(op.id, isTab, id));
+        }
+
         return (
             <tr>
                 <td style={{ width: '100%', whiteSpace: 'nowrap' }}>
-                    └ <a style={{ userSelect: 'none', cursor: 'pointer', textDecoration: 'bold', color: '#FFF', paddingLeft: 5, paddingRight: 5, paddingBottom: 3, backgroundColor: '#337AB7', border: '1px solid', borderColor: '#2e6da4', borderRadius: 2 }} onClick={(e) => { this.props.dispatch(selectDocument(id)) }}>{documents.find(d => d.id === id).name}</a>
+                    └ <a style={{ userSelect: 'none', cursor: 'pointer', textDecoration: 'bold', color: '#FFF', paddingLeft: 5, paddingRight: 5, paddingBottom: 3, backgroundColor: '#337AB7', border: '1px solid', borderColor: '#2e6da4', borderRadius: 2 }} onClick={(e) => { dispatch(selectDocument(id)) }}>{documents.find(d => d.id === id).name}</a>
                 </td>
                 <td>
-                    <button className="btn btn-default btn-xs" onClick={this.remove}>
+                    <button className="btn btn-default btn-xs" onClick={remove}>
                         <i className="fa fa-trash"></i>
                     </button>
                 </td>
                 <td style={{ paddingLeft: 15 }} ></td>
             </tr>
         );
-    }
 }
-Doc = connect()(Doc);
 
 const checkPositive = {
     check: v => v > 0,
@@ -570,10 +566,10 @@ export const OPERATION_FIELDS = {
     latheTurnAdd: { name: 'latheTurnAdd', buttonLabel: 'Add Turn', input: ButtonInput, wide: true, ...latheTurnAdd },
     latheTurns: { name: 'latheTurns', input: TableInput, fields: OPERATION_LATHE_TURN_FIELDS, remove: operationLatheTurnRemove, wide: true },
 
-    hookOperationStart: { name: 'hookOperationStart', label: 'Pre Op', units: '', input: TagInput('settings.macros') },
-    hookOperationEnd: { name: 'hookOperationEnd', label: 'Post Op', units: '', input: TagInput('settings.macros') },
-    hookPassStart: { name: 'hookPassStart', label: 'Pre Pass', units: '', input: TagInput('settings.macros') },
-    hookPassEnd: { name: 'hookPassEnd', label: 'Post Pass', units: '', input: TagInput('settings.macros') },
+    hookOperationStart: { name: 'hookOperationStart', label: 'Pre Op', units: '', input: TagInput('macros') },
+    hookOperationEnd: { name: 'hookOperationEnd', label: 'Post Op', units: '', input: TagInput('macros') },
+    hookPassStart: { name: 'hookPassStart', label: 'Pre Pass', units: '', input: TagInput('macros') },
+    hookPassEnd: { name: 'hookPassEnd', label: 'Post Pass', units: '', input: TagInput('macros') },
 };
 
 export const OPERATION_GROUPS = {
@@ -666,57 +662,73 @@ const traverseDocumentTypes = (ids, documents) => {
     return result;
 }
 
-class Operation extends React.Component {
 
-    UNSAFE_componentWillMount() {
-        this.setType = e => this.props.dispatch(setOperationAttrs({ type: e.target.value }, this.props.op.id));
-        this.setTypeString = e => this.props.dispatch(setOperationAttrs({ type: e }, this.props.op.id));
-        this.toggleExpanded = e => this.props.dispatch(setOperationAttrs({ expanded: !this.props.op.expanded }, this.props.op.id));
-        this.toggleEnabled = e => this.props.dispatch(setOperationAttrs({ enabled: !this.props.op.enabled }, this.props.op.id));
-        this.remove = e => this.props.dispatch(removeOperation(this.props.op.id));
-        this.moveUp = e => this.props.dispatch(moveOperation(this.props.op.id, -1));
-        this.moveDn = e => this.props.dispatch(moveOperation(this.props.op.id, +1));
-        this.preset = (type, attrs) => this.props.dispatch(setOperationAttrs({ ...attrs,type: type }, this.props.op.id))
-        this.toggleDocs = e => this.props.dispatch(setOperationAttrs({ _docs_visible: !this.props.op._docs_visible }, this.props.op.id));
+function Operation({ op, selected, fillColors, strokeColors }) {
 
-        this.documentsCount = null;
-        this.documentTypes = { vectors: 0, images: 0 };
-        this.availableOps = Object.keys(OPERATION_TYPES);
-        this.operationGroups = groupFields(OPERATION_TYPES[this.props.op.type].fields)
-    }
+    const [documentsCount, setDocumentsCount] = useState(null);
+    const [documentTypes, setDocumentTypes] = useState({ vectors: 0, images: 0 });
+    const [availableOps, setAvailableOps] = useState(Object.keys(OPERATION_TYPES));
+    const [operationGroups, setOperationGroups] = useState(groupFields(OPERATION_TYPES[op.type].fields));
+    const [opType, setOpType] = useState(op.type);
+    const [showError, setShowError] = useState(false);
 
-    UNSAFE_componentWillReceiveProps(nextProps) {
+    const dispatch = useDispatch();
+    const settings = useSelector((state) => state.settings);
+    const documents = useSelector((state) => state.documents);
+    const panes = useSelector((state) => state.panes);
+    const splitters = useSelector((state) => state.splitters);
 
-        if (nextProps.op.documents.length !== this.documentsCount) {
-            this.documentsCount = nextProps.op.documents.length
-            this.documentTypes = traverseDocumentTypes(nextProps.op.documents, nextProps.documents)
-            this.availableOps = Object.keys(OPERATION_TYPES);
-            if (nextProps.op.documents.length) {
-                if (!this.documentTypes.vectors) this.availableOps = this.availableOps.filter(item => item.match(/Raster/gi))
-                if (!this.documentTypes.images) this.availableOps = this.availableOps.filter(item => !item.match(/^Laser Raster$/gi))
+    const errorRef = useRef(null);
 
-                if (!this.availableOps.includes(nextProps.op.type))
-                    this.setTypeString(this.availableOps[0])
+        const setType = e => dispatch(setOperationAttrs({ type: e.target.value }, op.id));
+        const setTypeString = e => dispatch(setOperationAttrs({ type: e }, op.id));
+        const toggleExpanded = e => dispatch(setOperationAttrs({ expanded: !op.expanded }, op.id));
+        const toggleEnabled = e => dispatch(setOperationAttrs({ enabled: !op.enabled }, op.id));
+        const remove = e => dispatch(removeOperation(op.id));
+        const moveUp = e => dispatch(moveOperation(op.id, -1));
+        const moveDn = e => dispatch(moveOperation(op.id, +1));
+        const preset = (type, attrs) => dispatch(setOperationAttrs({ ...attrs,type: type }, op.id))
+        const toggleDocs = e => dispatch(setOperationAttrs({ _docs_visible: !op._docs_visible }, op.id));
+
+    useEffect(() => {
+        if (op.documents.length !== documentsCount) {
+            let newDocumentTypes = traverseDocumentTypes(op.documents, documents)
+            let newAvailableOps = Object.keys(OPERATION_TYPES);
+            if (op.documents.length) {
+                if (!newDocumentTypes.vectors) newAvailableOps = newAvailableOps.filter(item => item.match(/Raster/gi))
+                if (!newDocumentTypes.images) newAvailableOps = newAvailableOps.filter(item => !item.match(/^Laser Raster$/gi))
+
+                if (!newAvailableOps.includes(op.type))
+                    setTypeString(newAvailableOps[0])
             }
+            setDocumentsCount(op.documents.length);
+            setDocumentTypes(newDocumentTypes);
+            setAvailableOps(newAvailableOps);
         }
 
-        if (nextProps.op.type != this.props.op.type) {
-            this.operationGroups = groupFields(OPERATION_TYPES[nextProps.op.type].fields)
+        if (op.type != opType) {
+            setOpType(op.type);
+            setOperationGroups(groupFields(OPERATION_TYPES[op.type].fields));
         }
-    }
+    }, [op, documents]);
 
-    render() {
-        let { op, documents, selected, bounds, dispatch, fillColors, strokeColors, settings } = this.props;
-        let error;
+    useEffect(() => {
+        let newShowError = false;
         if (!op.expanded) {
+            if (!op.documents.length && !OPERATION_TYPES[op.type].skipDocs) {
+                newShowError = true;
+            } else {
             for (let fieldName of OPERATION_TYPES[op.type].fields) {
                 let field = OPERATION_FIELDS[fieldName];
                 if (field.check && !field.check(op[fieldName], settings, op) && (!field.condition || field.condition(op, settings))) {
-                    error = <Error operationsBounds={bounds} message="Expand to setup operation" />;
+                    newShowError = true;
                     break;
                 }
             }
+            }
         }
+        setShowError(newShowError);
+    }, [op]);
 
         let leftStyle;
         if (selected)
@@ -725,37 +737,36 @@ class Operation extends React.Component {
             leftStyle = { display: 'table-cell', borderLeft: '4px solid transparent', borderRight: '4px solid transparent' };
 
         let header;
-
         if (op.name && op.name.length)
-            header = (<h5 style={{ marginTop: 0 }} onClick={this.toggleExpanded}>{op.name}</h5>)
+            header = (<h5 style={{ marginTop: 0 }} onClick={toggleExpanded}>{op.name}</h5>)
 
         let rows = [
-            <GetBounds Type="div" key="header" style={{ display: 'table-row' }} data-operation-id={op.id}>
+            <div key="header" style={{ display: 'table-row' }} data-operation-id={op.id}>
                 <div style={leftStyle} />
                 <div style={{ display: 'table-cell', cursor: 'pointer' }}>
-                    <i onClick={this.toggleExpanded}
+                    <i onClick={toggleExpanded}
                         className={op.expanded ? 'fa fa-fw fa-minus-circle' : 'fa fa-fw fa-plus-circle'} />
                 </div>
 
-                <div style={{ display: 'table-cell', width: '100%' }}>
+                <div ref={errorRef} style={{ display: 'table-cell', width: '100%' }}>
                     {header}
                     <span style={{ display: 'flex', justifyContent: 'space-between' }}>
 
                         <div style={{ whiteSpace: 'nowrap' }}>
-                            <select className="input-xs" value={op.type} onChange={this.setType}>{Object.keys(OPERATION_TYPES).map(type => <option key={type} disabled={!this.availableOps.includes(type)}>{type}</option>)}</select>
-                            <MaterialPickerButton className="btn btn-success btn-xs" onApplyPreset={this.preset} operation={op} types={this.availableOps}><i className="fa fa-magic"></i></MaterialPickerButton>
-                            <MaterialSaveButton className="btn btn-success btn-xs" onApplyPreset={this.preset} operation={op} types={this.availableOps}><i className="fa fa-floppy-o"></i></MaterialSaveButton>
+                            <select className="input-xs" value={op.type} onChange={setType}>{Object.keys(OPERATION_TYPES).map(type => <option key={type} disabled={!availableOps.includes(type)}>{type}</option>)}</select>
+                            <MaterialPickerButton className="btn btn-success btn-xs" onApplyPreset={preset} operation={op} types={availableOps}><i className="fa fa-magic"></i></MaterialPickerButton>
+                            <MaterialSaveButton className="btn btn-success btn-xs" onApplyPreset={preset} operation={op} types={availableOps}><i className="fa fa-floppy-o"></i></MaterialSaveButton>
                         </div>
                         <div className="btn-group">
-                            <button className={"btn btn-warning btn-xs " + (op.enabled ? '' : 'btn-off')} onClick={this.toggleEnabled} title="Enable/Disable operation"><i className="fa fa-power-off"></i></button>
-                            <button className="btn btn-default btn-xs " onClick={this.moveUp}><i className="fa fa-arrow-up"></i></button>
-                            <button className="btn btn-default btn-xs" onClick={this.moveDn}><i className="fa fa-arrow-down"></i></button>
-                            <button className="btn btn-danger btn-xs" onClick={this.remove}><i className="fa fa-times"></i></button>
+                            <button className={"btn btn-warning btn-xs " + (op.enabled ? '' : 'btn-off')} onClick={toggleEnabled} title="Enable/Disable operation"><i className="fa fa-power-off"></i></button>
+                            <button className="btn btn-default btn-xs " onClick={moveUp}><i className="fa fa-arrow-up"></i></button>
+                            <button className="btn btn-default btn-xs" onClick={moveDn}><i className="fa fa-arrow-down"></i></button>
+                            <button className="btn btn-danger btn-xs" onClick={remove}><i className="fa fa-times"></i></button>
                         </div>
                     </span>
-                    {error}
+                    {(panes.visible && errorRef) ? <Error key={splitters.sidebar+splitters.cam_documents} target={errorRef.current} show={showError} id="OperationSetupError" message="Expand to setup operation" /> : undefined}
                 </div>
-            </GetBounds>
+            </div>
         ];
         if (op.expanded) {
             if (!OPERATION_TYPES[op.type].skipDocs)
@@ -770,11 +781,11 @@ class Operation extends React.Component {
                                 </thead>
                                 <tbody style={{ display: op._docs_visible ? 'block' : 'none' }}>
                                     {op.documents.map(id => {
-                                        return <Doc key={id} op={op} documents={documents} id={id} isTab={false} dispatch={dispatch} />
+                                        return <Doc key={id} op={op} id={id} isTab={false} />
                                     })}
                                 </tbody>
                                 <tfoot>
-                                    <tr><td colSpan='3' style={{ textAlign: 'right' }}><a onClick={this.toggleDocs}><small>{op._docs_visible ? 'Hide Docs' : 'Show Docs (' + op.documents.length + ')'}</small></a></td></tr>
+                                    <tr><td colSpan='3' style={{ textAlign: 'right' }}><a onClick={toggleDocs}><small>{op._docs_visible ? 'Hide Docs' : 'Show Docs (' + op.documents.length + ')'}</small></a></td></tr>
                                 </tfoot>
                             </table>
                         </div>
@@ -801,7 +812,7 @@ class Operation extends React.Component {
                     <div style={{ display: 'table-cell', whiteSpace: 'normal' }}>
                         <table>
                             <tbody>
-                                {Object.entries(this.operationGroups || {}).map((entry) => {
+                                {Object.entries(operationGroups || {}).map((entry) => {
                                     let [key, group] = entry;
                                     let fields = group.fields
                                         .filter(fieldName => { let f = OPERATION_FIELDS[fieldName]; return f && (!f.condition || f.condition(op, settings)); })
@@ -809,7 +820,7 @@ class Operation extends React.Component {
                                             return <Field
                                                 key={fieldName} op={op} field={OPERATION_FIELDS[fieldName]} selected={selected}
                                                 fillColors={fillColors} strokeColors={strokeColors} settings={settings}
-                                                operationsBounds={bounds} setAttrs={setOperationAttrs} dispatch={dispatch} />
+                                                setAttrs={setOperationAttrs} dispatch={dispatch} />
                                         })
                                     if (key !== '_default' && group.fields.length) {
                                         if (group.collapsible) {
@@ -848,7 +859,7 @@ class Operation extends React.Component {
                                 <table style={{ width: '100%', border: '2px dashed #ccc' }}>
                                     <tbody>
                                         {op.tabDocuments.map(id => {
-                                            return <Doc key={id} op={op} documents={documents} id={id} isTab={true} dispatch={dispatch} />
+                                            return <Doc key={id} op={op} id={id} isTab={true} />
                                         })}
                                         <tr><td colSpan='3'><center><small>Drag additional Document(s) here</small></center></td></tr>
                                     </tbody>
@@ -887,104 +898,100 @@ class Operation extends React.Component {
         } // op.expanded
 
         return <div className={"operation-row " + (op.enabled ? "" : "disabled")} >{rows}</div>;
-    }
+
 }; // Operation
 
-Operation = withStoredBounds(Operation);
+export function Operations({ style }) {
 
-class Operations extends React.Component {
-    render() {
-        let { operations, currentOperation, documents, dispatch, bounds, settings } = this.props;
-        let fillColors = [];
-        let strokeColors = [];
+    const [fillColors, setFillColors] = useState([]);
+    const [strokeColors, setStrokeColors] = useState([]);
+    const [showTip, setShowTip] = useState(false);
+
+    const dispatch = useDispatch();
+    const settings = useSelector((state) => state.settings);
+    const documents = useSelector((state) => state.documents);
+    const operations = useSelector((state) => state.operations);
+    const currentOperation = useSelector((state) => state.currentOperation);
+    const panes = useSelector((state) => state.panes);
+    const splitters = useSelector((state) => state.splitters);
+
+    const tipRef = useRef(null);
+
         let addColor = (colors, color) => {
             let value = JSON.stringify(color);
             if (!colors.find(c => c.value === value))
                 colors.push({ value: value, color: color });
         }
+
+    useEffect(() => {
+        let newFillColors = [];
+        let newStrokeColors = [];
         for (let doc of documents) {
             if (doc.rawPaths) {
                 if (hasClosedRawPaths(doc.rawPaths))
-                    addColor(fillColors, doc.fillColor);
-                addColor(strokeColors, doc.strokeColor);
+                    addColor(newFillColors, doc.fillColor);
+                addColor(newStrokeColors, doc.strokeColor);
             }
         }
         for (let op of operations) {
             if (op.filterFillColor)
-                addColor(fillColors, op.filterFillColor);
+                addColor(newFillColors, op.filterFillColor);
             if (op.filterStrokeColor)
-                addColor(strokeColors, op.filterStrokeColor);
+                addColor(newStrokeColors, op.filterStrokeColor);
         }
+        setFillColors(newFillColors);
+        setStrokeColors(newStrokeColors);
+        setShowTip(documents.length !== 0 && operations.length === 0);
+    }, [documents, operations]);
+
         return (
-            <div style={this.props.style}>
-                <div style={{ backgroundColor: '#eee', padding: '8px 16px', border: '3px dashed #ccc', marginBottom: 5 }} data-operation-id="new">
+            <div style={style}>
+                <div ref={tipRef} style={{ backgroundColor: '#eee', padding: '8px 16px', border: '3px dashed #ccc', marginBottom: 5 }} data-operation-id="new">
                     <span style={{ paddingRight: '1em' }} className="fa fa-fw fa-plus"></span>
                     <b>Drag documents here from the list above</b>
-                    <NoOperationsError operationsBounds={bounds} documents={documents} operations={operations} />
+                    {(panes.visible && tipRef) ? <Error key={splitters.sidebar+splitters.cam_documents} target={tipRef.current} show={showTip} id="NoOperationsError" message="Drag Document(s) Here" /> : undefined}
                 </div>
                 <OperationToolbar />
-                <GetBounds Type={'div'} className="operations" style={{ height: "100%", overflowY: "auto" }} >
+                <div className="operations" style={{ height: "100%", overflowY: "auto" }} >
                     {operations.map(o =>
                         <Operation
-                            key={o.id} op={o} selected={currentOperation === o.id} documents={documents}
-                            fillColors={fillColors} strokeColors={strokeColors} settings={settings}
-                            dispatch={dispatch} />
+                            key={o.id} op={o} selected={currentOperation === o.id}
+                            fillColors={fillColors} strokeColors={strokeColors} />
                     )}
-                </GetBounds>
+                </div>
             </div >
         );
-    }
+
 };
 
-Operations = connect(
-    ({ operations, currentOperation, documents, settings }) => ({ operations, currentOperation, documents, settings }),
-)(withGetBounds(Operations));
-export { Operations };
 
+function OperationToolbar() {
 
-class OperationToolbar extends React.Component {
+    const dispatch = useDispatch();
+    const settings = useSelector((state) => state.settings);
+    const documents = useSelector((state) => state.documents);
+    const operations = useSelector((state) => state.operations);
 
-    constructor(props) {
-        super(props);
-        this.handleAddSingle.bind(this)
-        this.handleAddMultiple.bind(this)
-        this.handleClearAll.bind(this)
-    }
+    function handleAddSingle() {
+        let docs = selectedDocuments(documents);
+        dispatch(addOperation({ documents: docs }))
+    };
 
-    handleAddSingle() {
-        this.props.createSingle(selectedDocuments(this.props.documents));
-    }
+    function handleAddMultiple() {
+        let docs = selectedDocuments(documents);
+        docs.forEach((doc) => { dispatch(addOperation({ documents: [doc] })) })
+    };
 
-    handleAddMultiple() {
-        this.props.createMultiple(selectedDocuments(this.props.documents));
-    }
+    function handleClearAll() {
+        confirm("Are you sure?", (data) => {
+            if (data) dispatch(clearOperations());
+        });
+    };
 
-    handleClearAll() {
-        this.props.clearAll();
-    }
-
-    render() {
-        let hasSelected = this.props.documents.some((item) => item.selected)
-        let settings = this.props.settings;
+        let hasSelected = documents.some((item) => item.selected)
         return <ButtonToolbar style={{ paddingBottom: "5px", marginBottom: "5px", borderBottom: "1px solid #eee" }}>
-            <Button disabled={!hasSelected && !settings.toolCreateEmptyOps} onClick={(e) => { this.handleAddSingle() }} bsSize="xsmall" bsStyle="info" title="Create a single operation with the selected documents"><Icon name="object-group" /> Create Single </Button>
-            <Button disabled={!hasSelected} onClick={(e) => { this.handleAddMultiple() }} bsSize="xsmall" bsStyle="info" title="Create operations with each of the selected documents"><Icon name="object-ungroup" /> Create Multiple </Button>
-            <Button disabled={!this.props.operations.length} onClick={e => this.handleClearAll()} bsStyle="danger" bsSize="xsmall" title="Clear all operations" >Clear All</Button>
+            <Button disabled={!hasSelected && !settings.toolCreateEmptyOps} onClick={(e) => { handleAddSingle() }} bsSize="xsmall" bsStyle="info" title="Create a single operation with the selected documents"><Icon name="object-group" /> Create Single </Button>
+            <Button disabled={!hasSelected} onClick={(e) => { handleAddMultiple() }} bsSize="xsmall" bsStyle="info" title="Create operations with each of the selected documents"><Icon name="object-ungroup" /> Create Multiple </Button>
+            <Button disabled={!operations.length} onClick={e => handleClearAll()} bsStyle="danger" bsSize="xsmall" title="Clear all operations" >Clear All</Button>
         </ButtonToolbar>
-    }
 }
-
-OperationToolbar = connect(
-    (state) => { return { documents: state.documents, operations: state.operations, settings: state.settings } },
-    (dispatch) => {
-        return {
-            createSingle: (documents) => { dispatch(addOperation({ documents })) },
-            createMultiple: (documents) => { documents.forEach((doc) => { dispatch(addOperation({ documents: [doc] })) }) },
-            clearAll: () => {
-                confirm("Are you sure?", (data) => {
-                    if (data) dispatch(clearOperations());
-                })
-            }
-        }
-    }
-)(OperationToolbar);

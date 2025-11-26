@@ -710,6 +710,24 @@ canvas.ImagePort {width: 100%; height:100%; background:#ffffff; pointer-events:'
      border-radius: 5px
 }
 
+.tooltip.error-tooltip > .tooltip-inner {
+    background-color: #d9534f;
+    color: white;
+    font-size:1.25em;
+}
+.tooltip.top.error-tooltip > .tooltip-arrow {
+    border-top-color: #d9534f;
+}
+.tooltip.right.error-tooltip > .tooltip-arrow {
+    border-right-color: #d9534f;
+}
+.tooltip.bottom.error-tooltip > .tooltip-arrow {
+    border-bottom-color: #d9534f;
+}
+.tooltip.left.error-tooltip > .tooltip-arrow {
+    border-left-color: #d9534f;
+}
+
 .progress-bar {
       transition-duration: 0s !important;
     }

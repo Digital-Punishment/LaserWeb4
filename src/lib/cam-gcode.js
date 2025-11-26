@@ -20,24 +20,20 @@ import { rawPathsToClipperPaths, union, xor } from './mesh';
 import { humanFileSize } from './helpers';
 import { strftime } from './strftime'//
 
-
-import { GlobalStore } from '../index'
-
 import queue from 'queue';
 
 import hhmmss from 'hhmmss';
 
-export const expandHookGCode = (operation) =>{
-    let state = GlobalStore().getState();
-    let macros = state.settings.macros || {};
+export const expandHookGCode = (operation, macros) =>{
     let op=Object.assign({},operation)
     let hooks = Object.keys(op).filter(i=>i.match(/^hook/gi))
         hooks.forEach(hook => {
-            let keys = op[hook].split(',')
+            let keys = op[hook];
             let gcode='';
             if (keys.length){
                 keys.forEach(key=>{
-                    if (macros[key]) gcode+=("\r\n; Macro ["+hook+"]: "+macros[key].label+"\r\n"+macros[key].gcode+"\r\n")
+                    if (macros[key.value])
+                        gcode += ("\r\n; Macro ["+hook+"]: "+macros[key.value].label+"\r\n"+macros[key.value].gcode+"\r\n")
                 })
             }
             op[hook] = gcode;
@@ -71,7 +67,7 @@ export function getGcode(settings, documents, operations, macros, documentsCache
     console.log('Queueing ' + operations.length + ' operation(s)');
 
     for (let opIndex = 0; opIndex < operations.length; ++opIndex) {
-        let op = expandHookGCode(operations[opIndex]);
+        let op = expandHookGCode(operations[opIndex], macros);
 
         const jobDone = (g, cb) => {
             if (g !== "") { gcode[opIndex]=g;};
