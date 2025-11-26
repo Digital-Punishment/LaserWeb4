@@ -125,7 +125,7 @@ function ColorBoxOption({ data, ...props }) {
     let rgb = 'rgb(' + data.color[0] * 255 + ',' + data.color[1] * 255 + ',' + data.color[2] * 255 + ')';
     return (
         <components.Option {...props}>
-            <span style={{ backgroundColor: rgb, width: 40, display: 'inline-block' }}>&nbsp;</span>
+            <span style={{ backgroundColor: rgb, width: 40, display: 'inline-block', border: '1px solid darkgray' }}>&nbsp;</span>
         </components.Option>
     );
 }
@@ -134,7 +134,7 @@ function ColorBoxValue({ data, ...props }) {
     let rgb = 'rgb(' + data.color[0] * 255 + ',' + data.color[1] * 255 + ',' + data.color[2] * 255 + ')';
     return (
         <components.SingleValue {...props}>
-            <span style={{ backgroundColor: rgb, width: 40, display: 'inline-block' }}>&nbsp;</span>
+            <span style={{ backgroundColor: rgb, width: 40, display: 'inline-block', border: '1px solid darkgray' }}>&nbsp;</span>
         </components.SingleValue>
     );
 }
