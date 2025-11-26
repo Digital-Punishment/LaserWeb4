@@ -46,7 +46,7 @@ export const expandHookGCode = (operation) =>{
     return op;
 }
 
-export function getGcode(settings, documents, operations, documentCacheHolder, showAlert, done, progress) {
+export function getGcode(settings, documents, operations, macros, documentsCache, showAlert, done, progress) {
     "use strict";
 
     let starttime=new Date().getTime()
@@ -119,7 +119,7 @@ export function getGcode(settings, documents, operations, documentCacheHolder, s
                         if (data.tabGeometry) tabGeometry = data.tabGeometry
                         if (data.filteredDocIds) filteredDocIds = data.filteredDocIds
                         data.docsWithImages.forEach(_doc => {
-                            let cache = documentCacheHolder.cache.get(_doc.id);
+                            let cache = documentsCache.get(_doc.id);
                             if (cache && cache.imageLoaded)
                                 docsWithImages.push(Object.assign([], _doc, { image: cache.image }));
                         })
@@ -160,7 +160,7 @@ export function getGcode(settings, documents, operations, documentCacheHolder, s
                         laserOps = true;
                         if (startCode === "") startCode = settings.gcodeStart;
                         if (endCode === "") endCode = settings.gcodeEnd;
-                        getLaserRasterMergeGcodeFromOp(settings, documentCacheHolder, opIndex, op, filteredDocIds, showAlert, (gcode) => { jobDone(gcode, cb) }, progress, jobIndex, QE.chunk, workers);
+                        getLaserRasterMergeGcodeFromOp(settings, documentsCache, opIndex, op, filteredDocIds, showAlert, (gcode) => { jobDone(gcode, cb) }, progress, jobIndex, QE.chunk, workers);
 
                     } else if (op.type.substring(0, 5) === 'Mill ') {
                         millOps = true;

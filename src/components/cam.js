@@ -15,17 +15,16 @@
 
 import { Helper as dxfHelper} from 'dxf';
 import Parser from '../lib/lw.svg-parser/parser';
-import React from 'react'
-import ReactDOM from 'react-dom'
-import { connect } from 'react-redux';
+import React, { useState, useContext, useEffect, useRef } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import { useImmer } from "use-immer";
 
 import { loadDocument, setDocumentAttrs, cloneDocumentSelected, selectDocuments, colorDocumentSelected, removeDocumentSelected, selectDocumentsByColor } from '../actions/document';
 
 import { setGcode, generatingGcode } from '../actions/gcode';
 import { resetWorkspace } from '../actions/laserweb';
 import { Documents } from './document';
-import { withDocumentCache } from './document-cache'
-import { GetBounds, withGetBounds } from './get-bounds.js';
+import { DocumentCacheContext } from './document-cache'
 import { Operations, Error } from './operation';
 import { OperationDiagram } from './operation-diagram';
 import Splitter from './splitter';
@@ -48,206 +47,103 @@ import convert from 'color-convert'
 
 export const DOCUMENT_FILETYPES = '.png,.jpg,.jpeg,.bmp,.gcode,.g,.svg,.dxf,.tap,.gc,.nc'
 
-function NoDocumentsError(props) {
-    let { settings, documents, operations, camBounds } = props;
-    if (documents.length === 0 && (operations.length === 0 || !settings.toolCreateEmptyOps))
-        return <GetBounds Type="span"><Error operationsBounds={camBounds} message='Click here to begin' /></GetBounds>;
-    else
-        return <span />;
-}
 
-function GcodeProgress({ gcoding, onStop }) {
-    return <div style={{ display: "flex", flexDirection: "row" }}><ProgressBar now={gcoding.percent} active={gcoding.enable} label={`${gcoding.percent}%`} style={{ flexGrow: 1, marginBottom: "0px" }} /><Button onClick={onStop} bsSize="xs" bsStyle="danger"><Icon name="hand-paper-o" /></Button></div>
-}
+export function CAMValidator({noneOnSuccess, className, style}) {
 
-GcodeProgress = connect((state) => { return { gcoding: state.gcode.gcoding } })(GcodeProgress)
+        const documents = useSelector((state) => state.documents.length);
 
-export class CAMValidator extends React.Component {
-    render() {
-        let { noneOnSuccess, documents, className, style } = this.props;
         let errors = (!documents) ? "Add files to begin" : undefined
         if (noneOnSuccess && !errors) return null;
         return <span className={className} title={errors ? errors : "Good to go!"} style={style}><Icon name={errors ? 'warning' : 'check'} /></span>
-    }
 }
 
-CAMValidator = connect((state) => { return { documents: state.documents.length } })(CAMValidator)
+export default function Cam() {
 
-let __interval;
+    const [filter, setFilter] = useState(null);
+    const [showTip, setShowTip] = useState(false);
+    const [QE, setQE] = useState(null);
 
-class Cam extends React.Component {
+    const initialGcodeState = {
+        processing: false,
+        percent: 0,
+    }
+    const [gcoding, updateGcoding] = useImmer(initialGcodeState);
 
-    constructor(props){
-        super(props);
-        this.state={filter:null}
+    const dispatch = useDispatch();
+    const settings = useSelector((state) => state.settings);
+    const documents = useSelector((state) => state.documents);
+    const operations = useSelector((state) => state.operations);
+    const macros = useSelector((state) => state.macros);
+    const currentOperation = useSelector((state) => state.currentOperation);
+    const gcode = useSelector((state) => state.gcode.content);
+    const dirty = useSelector((state) => state.gcode.dirty);
+    const panes = useSelector((state) => state.panes);
+    const splitters = useSelector((state) => state.splitters);
+
+    const { documentsCache } = useContext(DocumentCacheContext);
+
+    const tipRef = useRef(null);
+
+    useEffect(() => {
+        setShowTip(documents.length === 0 && (operations.length === 0 || !settings.toolCreateEmptyOps));
+    }, [documents, operations]);
+
+    function generateGcode(e) {
+        updateGcoding((draft) => {draft.processing = true; draft.percent = 0;})
+        setQE(getGcode(
+            settings,
+            documents,
+            operations,
+            macros,
+            documentsCache,
+            (msg, level) => { CommandHistory.write(msg, level); },  // showAlert
+            (gcode) => {                                            // done
+                updateGcoding(initialGcodeState);
+                dispatch(setGcode(gcode));
+            },
+            (threads) => {                                          // progress
+                updateGcoding((draft) => {draft.percent = ((Array.isArray(threads)) ? (threads.reduce((a, b) => a + b, 0) / threads.length) : threads).toFixed()});
+            }
+        ))
     }
 
-    UNSAFE_componentWillMount() {
-        let that = this
-        window.generateGcode = e => {
-            let { settings, documents, operations } = that.props;
-
-            let percent = 0;
-            __interval = setInterval(() => {
-                that.props.dispatch(generatingGcode(true, isNaN(percent) ? 0 : Number(percent)));
-            }, 100)
-
-            let QE = getGcode(settings, documents, operations, that.props.documentCacheHolder,
-                (msg, level) => { CommandHistory.write(msg, level); },
-                (gcode) => {
-                    clearInterval(__interval)
-                    that.props.dispatch(generatingGcode(false))
-                    that.props.dispatch(setGcode(gcode));
-                },
-                (threads) => {
-                    percent = ((Array.isArray(threads)) ? (threads.reduce((a, b) => a + b, 0) / threads.length) : threads).toFixed(2);
-                }
-            );
-            return QE;
-        }
-
-        this.generateGcode.bind(this)
-        this.stopGcode.bind(this)
-    }
-
-    generateGcode(e) {
-        this.QE = window.generateGcode(e);
-    }
-
-    stopGcode(e) {
-        if (this.QE) {
-            this.QE.end();
+    function stopGcode(e) {
+        if (QE) {
+            QE.end();
             console.log('User interrupted Gcode generation')
          }
     }
 
-    shouldComponentUpdate(nextProps, nextState) {
-        return (
-            nextProps.documents !== this.props.documents ||
-            nextProps.operations !== this.props.operations ||
-            nextProps.currentOperation !== this.props.currentOperation ||
-            nextProps.bounds !== this.props.bounds ||
-            nextProps.gcode !== this.props.gcode ||    // Needed for saveGcode() to work
-            nextProps.gcoding.percent !== this.props.gcoding.percent ||
-            nextProps.gcoding.enable !== this.props.gcoding.enable ||
-            nextState.filter !== this.state.filter
-        );
-    }
+    const saveGcode = (e) => {
+        prompt(
+            'Save as',
+            strftime(settings.gcodeFilename),
+            (file) => {
+                if (file !== null)
+                    sendAsFile(appendExt(file, settings.gcodeExtension), gcode)
+            },
+            !e.shiftKey)
+    };
+    const viewGcode = (e) => {
+        if (gcode.length < 1048576) {
+            openDataWindow(gcode);
+        } else {
+            confirm("Size: " + humanFileSize(gcode.length) + ", viewing very large files can negatively affect browser performance. Are you sure?",
+                (data) => { if (data) openDataWindow(gcode); },
+                e.shiftKey)
+        }};
 
+        const toggleDocumentExpanded = d => dispatch(setDocumentAttrs({ expanded: !d.expanded }, d.id));
 
-
-    render() {
-        let { settings, documents, operations, currentOperation, toggleDocumentExpanded, loadDocument, bounds } = this.props;
-        let validator = ValidateSettings(false)
-        let valid = validator.passes();
-        let someSelected=documents.some((i)=>(i.selected));
-
-        return (
-            <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <div className="panel panel-danger" style={{ marginBottom: 0 }}>
-                    <div className="panel-heading" style={{ padding: 2 }}>
-                        <table style={{ width: 100 + '%' }}>
-                            <tbody>
-                                <tr>
-                                    <td>
-                                        <label>Workspace</label>
-                                    </td>
-                                    <td>
-                                        <ApplicationSnapshotToolbar loadButton saveButton stateKeys={['documents', 'operations', 'currentOperation', 'settings.toolFeedUnits']} saveName={strftime(settings.workspaceFilename + '.json')} label="Workspace" className="well well-sm">
-                                            <Button bsSize="xsmall" bsStyle="warning" onClick={e => this.props.resetWorkspace(e)}>Reset <Icon name="trash" /></Button>
-                                        </ApplicationSnapshotToolbar>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div className="Resizer horizontal" style={{ marginTop: '2px', marginBottom: '2px' }}></div>
-                <div className="panel panel-info" style={{ marginBottom: 3 }}>
-                    <div className="panel-heading" style={{ padding: 2 }}>
-                        <table style={{ width: 100 + '%' }}>
-                            <tbody>
-                                <tr>
-                                    <td>
-                                        <label>Documents {Info(<small>Tip:  Hold <kbd>Ctrl</kbd> to click multiple documents</small>)}</label>
-                                    </td>
-                                    <td style={{display:"flex", justifyContent: "flex-end" }}>
-
-                                        <FileField style={{   position: 'relative', cursor: 'pointer' }} onChange={loadDocument} accept={DOCUMENT_FILETYPES}>
-                                            <button title="Add a DXF/SVG/PNG/BMP/JPG document to the document tree" className="btn btn-xs btn-primary"><i className="fa fa-fw fa-folder-open" />Add Document</button>
-                                            {(this.props.panes.visible) ? <NoDocumentsError camBounds={bounds} settings={settings} documents={documents} operations={operations} /> : undefined}
-                                        </FileField>&nbsp;
-                                    </td>
-                                </tr>
-
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <Splitter style={{ flexShrink: 0 }} split="horizontal" initialSize={100} resizerStyle={{ marginTop: 2, marginBottom: 2 }} splitterId="cam-documents">
-                    <div style={{height:"100%", display:"flex", flexDirection:"column"}} >
-                        <div style={{ overflowY: 'auto', flexGrow:1 }}><Documents documents={documents} filter={this.state.filter} toggleExpanded={toggleDocumentExpanded} /></div>
-                        {documents.length ? <ButtonToolbar bsSize="xsmall" bsStyle="default">
-
-                            <ButtonGroup>
-                                <Button  bsStyle="info" bsSize="xsmall" onClick={e=>{this.props.dispatch(selectDocuments(true))}} title="Select all"><Icon name="cubes"/></Button>
-                                <Button  bsStyle="default" bsSize="xsmall" onClick={e=>{this.props.dispatch(selectDocuments(false))}} title="Select none"><Icon name="cubes"/></Button>
-                                <Button  bsStyle="success" bsSize="xsmall" disabled={!someSelected} onClick={e=>{this.props.dispatch(selectDocumentsByColor(e.shiftKey))}} title="Select all with matching path color(s), Press [SHIFT] to select by fill color"><Icon name="eyedropper"/></Button>
-                            </ButtonGroup>
-                            <Button  bsStyle="warning" bsSize="xsmall" disabled={!someSelected} onClick={e=>{this.props.dispatch(cloneDocumentSelected())}} title="Clone selected"><Icon name="copy"/></Button>
-                            <Button  bsStyle="danger" bsSize="xsmall" disabled={!someSelected} onClick={e=>{this.props.dispatch(removeDocumentSelected())}} title="Remove selected"><Icon name="trash"/></Button>
-                            <SearchButton bsStyle="primary" bsSize="xsmall" search={this.state.filter} onSearch={filter=>{this.setState({filter})}} placement="bottom"><Icon name="search"/></SearchButton>
-                            <ButtonGroup style={{ float: 'right' }}>
-                                <ColorPicker to="rgba" icon="pencil" bsSize="xsmall" disabled={!someSelected} onClick={v=>this.props.dispatch(colorDocumentSelected({strokeColor:v||[0,0,0,1], strokeColorHex: convert.rgb.hex(v.slice(0, 3).map(x => x * 255))||"000000" }))}/>
-                                <ColorPicker to="rgba" icon="paint-brush" bsSize="xsmall" disabled={!someSelected} onClick={v=>this.props.dispatch(colorDocumentSelected({fillColor:v||[0,0,0,0], fillColorHex: convert.rgb.hex(v.slice(0, 3).map(x => x * 255))||"000000" }))}/>
-                            </ButtonGroup>
-                            </ButtonToolbar>:undefined}
-                    </div>
-                </Splitter>
-                <Alert bsStyle="success" style={{ padding: "4px", marginBottom: 7 }}>
-                    <table style={{ width: 100 + '%' }}>
-                        <tbody>
-                            <tr>
-                                <th>GCODE</th>
-                                <td style={{ width: "80%", textAlign: "right" }}>{!this.props.gcoding.enable ? (
-                                    <ButtonToolbar style={{ float: "right" }}>
-                                        <button title="Generate G-Code from Operations below" className={"btn btn-xs btn-attention " + (this.props.dirty ? 'btn-warning' : 'btn-primary')} disabled={!valid || this.props.gcoding.enable} onClick={(e) => this.generateGcode(e)}><i className="fa fa-fw fa-industry" />&nbsp;Generate</button>
-                                        <ButtonGroup>
-                                            <button title="View generated G-Code in a tab. Please disable popup blockers. Press [SHIFT] to avoid large file size confirmation and open in a new window." className="btn btn-info btn-xs" disabled={!valid || this.props.gcoding.enable} onClick={this.props.viewGcode}><i className="fa fa-eye" /></button>
-                                            <button title="Export G-code to File. Press [SHIFT] to edit filename." className="btn btn-success btn-xs" disabled={!valid || this.props.gcoding.enable} onClick={this.props.saveGcode}><i className="fa fa-floppy-o" /></button>
-                                            <FileField onChange={this.props.loadGcode} disabled={!valid || this.props.gcoding.enable} accept=".gcode,.gc,.nc">
-                                                <button title="Load G-Code from File" className="btn btn-danger btn-xs" disabled={!valid || this.props.gcoding.enable} ><i className="fa fa-folder-open" /></button>
-                                            </FileField>
-                                        </ButtonGroup>
-                                        <button title="Clear Current Gcode. Press [SHIFT] to avoid confirmation." className="btn btn-warning btn-xs" disabled={!valid || this.props.gcoding.enable} onClick={this.props.clearGcode}><i className="fa fa-trash" /></button>
-                                    </ButtonToolbar>) : <GcodeProgress onStop={(e) => this.stopGcode(e)} />}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </Alert>
-                <OperationDiagram {...{ operations, currentOperation }} />
-                <Operations style={{ flexGrow: 2, display: "flex", flexDirection: "column" }} />
-            </div>);
-    }
-};
-
-Cam = connect(
-    state => ({
-        settings: state.settings, documents: state.documents, operations: state.operations, currentOperation: state.currentOperation, gcode: state.gcode.content, gcoding: state.gcode.gcoding, dirty: state.gcode.dirty, panes: state.panes,
-        saveGcode: (e) => { prompt('Save as', strftime(state.settings.gcodeFilename), (file) => { if (file !== null) sendAsFile(appendExt(file, state.settings.gcodeExtension), state.gcode.content) }, !e.shiftKey) },
-        viewGcode: (e) => { if (state.gcode.content.length < 1048576) { openDataWindow(state.gcode.content); }
-            else {confirm("Size: " + humanFileSize(state.gcode.content.length) + ", viewing very large files can negatively affect browser performance. Are you sure?",  (data) => { if (data) openDataWindow(state.gcode.content); }, e.shiftKey) }},
-    }),
-    dispatch => ({
-        dispatch,
-        toggleDocumentExpanded: d => dispatch(setDocumentAttrs({ expanded: !d.expanded }, d.id)),
-        clearGcode: (e) => {
+        const clearGcode = (e) => {
             confirm("This will delete the currently loaded Gcode. Are you sure?", (data) => { if (data) dispatch(setGcode("")); }, e.shiftKey)
-        },
-        resetWorkspace: () => {
+        };
+
+        const handleResetWorkspace = () => {
             confirm("This will completely erase your workspace! Are you sure?", (data) => { if (data) dispatch(resetWorkspace()); })
-        },
-        loadDocument: (e, modifiers = {}) => {
+        };
+
+        const handleLoadDocument = (e, modifiers = {}) => {
             // TODO: report errors
             for (let file of e.target.files) {
                 let reader = new FileReader;
@@ -322,15 +218,107 @@ Cam = connect(
                     reader.readAsDataURL(file);
                 }
             }
-        },
-        loadGcode: e => {
+        };
+
+        const loadGcode = e => {
             let reader = new FileReader;
             reader.onload = () => dispatch(setGcode(reader.result));
             reader.readAsText(e.target.files[0]);
-        },
-    }),
-)(Cam);
+        };
 
-Cam = withDocumentCache(withGetBounds(Cam));
+        let validator = ValidateSettings(false)
+        let gcodingEnable = !validator.passes() ||  gcoding.processing;
+        let someSelected = documents.some((i)=>(i.selected));
 
-export default Cam;
+        return (
+            <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <div className="panel panel-danger" style={{ marginBottom: 0 }}>
+                    <div className="panel-heading" style={{ padding: 2 }}>
+                        <table style={{ width: 100 + '%' }}>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <label>Workspace</label>
+                                    </td>
+                                    <td>
+                                        <ApplicationSnapshotToolbar loadButton saveButton stateKeys={['documents', 'operations', 'currentOperation', 'settings.toolFeedUnits']} saveName={strftime(settings.workspaceFilename + '.json')} label="Workspace" className="well well-sm">
+                                            <Button bsSize="xsmall" bsStyle="warning" onClick={e => handleResetWorkspace(e)}>Reset <Icon name="trash" /></Button>
+                                        </ApplicationSnapshotToolbar>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div className="Resizer horizontal" style={{ marginTop: '2px', marginBottom: '2px' }}></div>
+                <div className="panel panel-info" style={{ marginBottom: 3 }}>
+                    <div className="panel-heading" style={{ padding: 2 }}>
+                        <table style={{ width: 100 + '%' }}>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <label>Documents {Info(<small>Tip:  Hold <kbd>Ctrl</kbd> to click multiple documents</small>)}</label>
+                                    </td>
+                                    <td style={{display:"flex", justifyContent: "flex-end" }}>
+                                        <FileField style={{ position: 'relative', cursor: 'pointer' }} onChange={(e, modifiers) => handleLoadDocument(e, modifiers)} accept={DOCUMENT_FILETYPES}>
+                                            <Button ref={tipRef} title="Add a DXF/SVG/PNG/BMP/JPG document to the document tree" bsStyle="primary" bsSize="xsmall"><i className="fa fa-fw fa-folder-open" />Add Document</Button>
+                                            {(panes.visible && tipRef) ? <Error key={splitters.sidebar} target={tipRef.current} show={showTip} id="NoDocumentsError" message="Click here to begin" /> : undefined}
+                                    </FileField>&nbsp;
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <Splitter style={{ flexShrink: 0 }} split="horizontal" initialSize={100} resizerStyle={{ marginTop: 2, marginBottom: 2 }} splitterId="cam_documents">
+                    <div style={{height:"100%", display:"flex", flexDirection:"column"}} >
+                        <div style={{ overflowY: 'auto', flexGrow:1 }}><Documents documents={documents} filter={filter} toggleExpanded={toggleDocumentExpanded} /></div>
+                        {documents.length ? <ButtonToolbar bsSize="xsmall" bsStyle="default">
+                            <ButtonGroup>
+                                <Button  bsStyle="info" bsSize="xsmall" onClick={e=>{dispatch(selectDocuments(true))}} title="Select all"><Icon name="cubes"/></Button>
+                                <Button  bsStyle="default" bsSize="xsmall" onClick={e=>{dispatch(selectDocuments(false))}} title="Select none"><Icon name="cubes"/></Button>
+                                <Button  bsStyle="success" bsSize="xsmall" disabled={!someSelected} onClick={e=>{dispatch(selectDocumentsByColor(e.shiftKey))}} title="Select all with matching path color(s), Press [SHIFT] to select by fill color"><Icon name="eyedropper"/></Button>
+                            </ButtonGroup>
+                            <Button  bsStyle="warning" bsSize="xsmall" disabled={!someSelected} onClick={e=>{dispatch(cloneDocumentSelected())}} title="Clone selected"><Icon name="copy"/></Button>
+                            <Button  bsStyle="danger" bsSize="xsmall" disabled={!someSelected} onClick={e=>{dispatch(removeDocumentSelected())}} title="Remove selected"><Icon name="trash"/></Button>
+                            <SearchButton bsStyle="primary" bsSize="xsmall" search={filter} onSearch={filter=>{setFilter(filter)}} placement="bottom"><Icon name="search"/></SearchButton>
+                            <ButtonGroup style={{ float: 'right' }}>
+                                <ColorPicker to="rgba" icon="pencil" bsSize="xsmall" disabled={!someSelected} onClick={v=>dispatch(colorDocumentSelected({strokeColor:v||[0,0,0,1], strokeColorHex: convert.rgb.hex(v.slice(0, 3).map(x => x * 255))||"000000" }))}/>
+                                <ColorPicker to="rgba" icon="paint-brush" bsSize="xsmall" disabled={!someSelected} onClick={v=>dispatch(colorDocumentSelected({fillColor:v||[0,0,0,0], fillColorHex: convert.rgb.hex(v.slice(0, 3).map(x => x * 255))||"000000" }))}/>
+                            </ButtonGroup>
+                            </ButtonToolbar>:undefined}
+                    </div>
+                </Splitter>
+                <Alert bsStyle="success" style={{ padding: "4px", marginBottom: 7 }}>
+                    <table style={{ width: 100 + '%' }}>
+                        <tbody>
+                            <tr>
+                                <th>GCODE</th>
+                                <td style={{ width: "80%", textAlign: "right" }}>
+                                    {!gcoding.processing ? (
+                                    <ButtonToolbar style={{ float: "right" }}>
+                                        <button title="Generate G-Code from Operations below" className={"btn btn-xs btn-attention " + (dirty ? 'btn-warning' : 'btn-primary')} disabled={gcodingEnable || !operations.length} onClick={(e) => generateGcode(e)}><i className="fa fa-fw fa-industry" />&nbsp;Generate</button>
+                                        <ButtonGroup>
+                                            <button title="View generated G-Code in a tab. Please disable popup blockers. Press [SHIFT] to avoid large file size confirmation and open in a new window." className="btn btn-info btn-xs" disabled={gcodingEnable || !gcode.length} onClick={viewGcode}><i className="fa fa-eye" /></button>
+                                            <button title="Export G-code to File. Press [SHIFT] to edit filename." className="btn btn-success btn-xs" disabled={gcodingEnable || !gcode.length} onClick={saveGcode}><i className="fa fa-floppy-o" /></button>
+                                            <FileField onChange={loadGcode} disabled={gcodingEnable} accept=".gcode,.gc,.nc">
+                                                <button title="Load G-Code from File" className="btn btn-danger btn-xs" disabled={gcodingEnable} ><i className="fa fa-folder-open" /></button>
+                                            </FileField>
+                                        </ButtonGroup>
+                                        <button title="Clear Current Gcode. Press [SHIFT] to avoid confirmation." className="btn btn-warning btn-xs" disabled={gcodingEnable} onClick={clearGcode}><i className="fa fa-trash" /></button>
+                                    </ButtonToolbar>) : (
+                                    <div style={{ display: "flex", flexDirection: "row" }}>
+                                        <ProgressBar now={+gcoding.percent} active={gcoding.processing} label={`${gcoding.percent}%`} style={{ flexGrow: 1, marginBottom: "0px" }} />
+                                        <Button onClick={stopGcode} bsSize="xs" bsStyle="danger">
+                                            <Icon name="hand-paper-o" />
+                                        </Button>
+                                    </div>)}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </Alert>
+                <OperationDiagram {...{ operations, currentOperation }} />
+                <Operations style={{ flexGrow: 2, display: "flex", flexDirection: "column" }} />
+            </div>);
+};
