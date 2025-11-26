@@ -33,17 +33,12 @@ export function DocumentCacheHolder({style, documents, children}) {
 
     const documentCacheValue = {
         documentsCache,
-        cache: documentsCache, //TODO remove this later
         cacheDrawCommands,
         setCacheDrawCommands,
         numImagesLoaded,
     };
 
     useEffect(() => { setDocuments(documents) }, [documents]);
-
-    function getChildContext() {
-        return { documentCacheHolder: documentCacheValue };
-    }
 
     function setDocuments(documents) {
             let oldCache = documentsCache;
@@ -160,16 +155,4 @@ export function DocumentCacheHolder({style, documents, children}) {
             </DocumentCacheContext.Provider>
         );
 
-}
-
-//TODO remove wrapper
-export function withDocumentCache(Component) {
-    class Wrapper extends React.Component {
-        render() {
-            return (
-                <Component {...{ ...this.props, documentCacheHolder: this.context.documentCacheHolder }} />
-            );
-        }
-    };
-    return Wrapper;
 }

@@ -267,10 +267,10 @@ export function getLaserRasterGcodeFromOp(settings, opIndex, op, docsWithImages,
 
 }
 
-export function getLaserRasterMergeGcodeFromOp(settings, documentCacheHolder, opIndex, op, filteredDocIds, showAlert, done, progress, jobIndex, QE_chunk, workers) {
+export function getLaserRasterMergeGcodeFromOp(settings, documentsCache, opIndex, op, filteredDocIds, showAlert, done, progress, jobIndex, QE_chunk, workers) {
     let bounds = { x1: Number.MAX_VALUE, y1: Number.MAX_VALUE, x2: -Number.MAX_VALUE, y2: -Number.MAX_VALUE };
     let filteredCachedDocs = [];
-    for (let cache of documentCacheHolder.cache.values()) {
+    for (let cache of documentsCache.values()) {
         let doc = cache.document;
         if (filteredDocIds.has(doc.id) && doc.transform2d && cache.bounds) {
             filteredCachedDocs.push(cache);
